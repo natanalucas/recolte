@@ -199,3 +199,26 @@
   .radio-orange:hover { border-color: var(--brand-orange); }
 }
 
+
+/* .input-line {
+  @apply bg-gray-100 dark:bg-gray-800 
+         border-b-2 border-[var(--brand-green)]
+         outline-none pb-1.5 px-2
+         text-foreground transition-all duration-200 text-[12px];
+} */
+
+.input-line {
+  @apply border-b-2 border-[var(--brand-green)]
+         outline-none pb-1.5 px-2
+         text-foreground transition-all duration-200 text-[12px];
+}
+
+.trash-btn {
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.tr-row:hover .trash-btn {
+    opacity: 1;
+}
+

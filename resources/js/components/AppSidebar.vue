@@ -40,7 +40,7 @@ const mainNavItems: NavItem[] = [
         items: [
             {
                 title: 'Reception',
-                href: '/fiche-reception',
+                href: '/reception',
                 icon: Truck, // Icône de formulaire
             },
             {
@@ -49,8 +49,8 @@ const mainNavItems: NavItem[] = [
                 icon: Wind, // Icône de vent/gaz pour le soufrage
             },
             {
-                title: 'Traçabilité',
-                href: '/fiche-tracabilite',
+                title: 'Triage',
+                href: '/fiche-triage',
                 icon: ClipboardList, // Icône de formulaire
             },
             {
@@ -72,22 +72,22 @@ const mainNavItems: NavItem[] = [
         items: [
             {
                 title: 'Reception',
-                href: '/fiche-reception',
+                href: '/fiche-reception-vanille',
                 icon: Truck, // Icône de formulaire
             },
             {
-                title: 'Traçabilité',
-                href: '/fiche-tracabilite',
+                title: 'Triage',
+                href: '/fiche-tracabilite-vanille',
                 icon: ClipboardList, // Icône de formulaire
             },
             {
                 title: 'Paletisation',
-                href: '/fiche-paletisation',
+                href: '/fiche-paletisation-vanille',
                 icon: Layers, // Icône de vent/gaz pour le soufrage
             },
             {
                 title: 'Expédition',
-                href: '/fiche-expedition',
+                href: '/fiche-expedition-vanille',
                 icon: Package, // Icône de vent/gaz pour le soufrage
             },
         ],
@@ -99,19 +99,19 @@ const mainNavItems: NavItem[] = [
         items: [
             {
                 title: 'Vanille',
-                href: '/archive-vanille',
+                href: '/archives/vanille',
                 icon: Leaf, // Icône de formulaire
             },
             {
                 title: 'Litchi',
-                href: '/archive-litchi',
+                href: '/archives/litchi',
                 icon: Cherry, // Icône de formulaire
             }
         ],
     },
     {
         title: 'Enqueteurs',
-        href: '/agent-tracabilite',
+        href: '/enqueteurs',
         icon: ClipboardCheck, // Icône de formulaire
     },
     {
@@ -121,16 +121,16 @@ const mainNavItems: NavItem[] = [
     }
 ];
 const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/vue-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#vue',
-        icon: BookOpen,
-    },
+    // {
+    //     title: 'Repository',
+    //     href: 'https://github.com/laravel/vue-starter-kit',
+    //     icon: FolderGit2,
+    // },
+    // {
+    //     title: 'Documentation',
+    //     href: 'https://laravel.com/docs/starter-kits#vue',
+    //     icon: BookOpen,
+    // },
 ];
 </script>
 

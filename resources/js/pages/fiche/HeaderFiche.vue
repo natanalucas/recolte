@@ -6,7 +6,6 @@ const props = defineProps({
 
 // Utilisation de defineModel pour une liaison bidirectionnelle propre
 const agentName = defineModel('agentName');
-const ficheNumber = defineModel('ficheNumber');
 </script>
 
 <template>
@@ -21,18 +20,18 @@ const ficheNumber = defineModel('ficheNumber');
         v-model="agentName" 
         type="text" 
         placeholder="Nom complet..." 
-        class="bg-transparent border-b border-[var(--sidebar-border)] focus:border-[var(--brand-green)] outline-none pb-1 text-sm"
+        class="input-line"
       >
     </div>
 
-    <div class="col-span-1 bg-[var(--card-alt)] rounded-xl shadow p-5 border border-[var(--sidebar-border)] flex flex-col gap-2">
+    <!-- <div class="col-span-1 bg-[var(--card-alt)] rounded-xl shadow p-5 border border-[var(--sidebar-border)] flex flex-col gap-2">
       <label class="text-xs uppercase font-semibold text-center tracking-wider">Fiche N°</label>
       <input 
         v-model="ficheNumber" 
         type="number" 
         placeholder="000" 
-        class="bg-transparent border-b border-[var(--sidebar-border)] focus:border-[var(--brand-green)] outline-none pb-1 text-sm text-center"
+        class="input-line text-center"
       >
-    </div>
+    </div> -->
   </div>
 </template>
