@@ -6,6 +6,7 @@ use Inertia\Inertia;
 use App\Http\Controllers\EnqueteurController;
 use App\Http\Controllers\ProducteurController;
 use App\Http\Controllers\ReceptionController;
+use App\Http\Controllers\PoidsController;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -38,6 +39,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->only(['index', 'store', 'update', 'destroy']);
 
     Route::get('/reception', [ReceptionController::class, 'index'])->name('reception.index');
+
+    Route::put('poids', [PoidsController::class, 'update'])->name('poids.update');
+    
 
 });
 

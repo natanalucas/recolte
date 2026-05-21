@@ -36,9 +36,14 @@ interface Producteur {
 // -------------------------------------------------------
 // Props
 // -------------------------------------------------------
-const props = defineProps<{ producteurs: Producteur[]; }>();
+const props = defineProps<{ producteurs: Producteur[]; kg: number; }>();
 
 const breadcrumbs = [{ title: 'Registre des Producteurs', href: '#' }];
+
+const kgValue = ref(props.kg);
+const kgInput = ref(props.kg);
+const showKgEdit = ref(false);
+const kgForm = useForm({ kg: props.kg });
 
 // -------------------------------------------------------
 // Formulaire Inertia
@@ -62,6 +67,18 @@ const itemsPerPage    = ref(10);
 const deletingId      = ref<number | null>(null);
 const showDeleteModal = ref(false);
 const itemToDelete    = ref<Producteur | null>(null);
+
+
+function saveKg() {
+  kgForm.kg = kgInput.value;
+  kgForm.put(route('poids.update'), {
+    preserveScroll: true,
+    onSuccess: () => {
+      kgValue.value = kgInput.value;
+      showKgEdit.value = false;
+    },
+  });
+}
 
 // -------------------------------------------------------
 // Helpers
@@ -229,13 +246,48 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
         </button>
       </div>
 
-      <!-- Recherche -->
-      <div class="p-6 bg-card border border-border rounded-2xl shadow-sm shadow-black/5">
+            <!-- Recherche -->
+      <!-- Kg + Recherche -->
+      <div class="p-6 bg-card border border-border rounded-2xl shadow-sm shadow-black/5 space-y-4">
+
+        <!-- Modificateur kg -->
+        <div class="flex items-center gap-4 pb-4 border-b border-border">
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-black uppercase opacity-60 tracking-widest">Rendement estimé (kg/pied)</span>
+            <div v-if="!showKgEdit"
+              class="flex items-center gap-2">
+              <span class="text-[18px] font-black text-[var(--brand-orange)] tabular-nums">{{ kgValue }} kg</span>
+              <button @click="showKgEdit = true; kgInput = kgValue"
+                class="p-1.5 hover:bg-muted rounded-lg hover:text-[var(--brand-green)] transition-all">
+                <Pencil class="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div v-else class="flex items-center gap-2">
+              <input v-model.number="kgInput" type="number" min="1"
+                class="w-24 text-[14px] font-black text-center bg-transparent border-b-2
+                      border-[var(--brand-orange)] outline-none pb-0.5 tabular-nums"
+                @keyup.enter="saveKg"
+                @keyup.escape="showKgEdit = false" />
+              <span class="text-[12px] font-bold opacity-60">kg</span>
+              <button @click="saveKg" :disabled="kgForm.processing"
+                class="h-7 px-3 bg-[var(--brand-green)] text-white text-[11px] font-black rounded-lg
+                      active:scale-95 transition-all disabled:opacity-60">
+                {{ kgForm.processing ? '...' : 'Modifier' }}
+              </button>
+              <button @click="showKgEdit = false"
+                class="h-7 w-7 flex items-center justify-center hover:bg-muted rounded-lg transition-all">
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recherche -->
         <div class="relative max-w-md">
           <Search class="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground" />
           <input v-model="searchQuery" type="text" placeholder="Filtrer..."
             class="w-full pl-8 pr-4 h-10 text-[12px] font-bold bg-transparent border-b border-border
-                   focus:border-[var(--brand-green)] outline-none text-foreground tracking-widest transition-colors uppercase" />
+                  focus:border-[var(--brand-green)] outline-none text-foreground tracking-widest transition-colors uppercase" />
         </div>
       </div>
 
@@ -244,9 +296,10 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
             <thead>
-              <tr class="border-b border-border bg-[var(--brand-green)] text-white">
+              <tr class="border-b border-border bg-[var(--brand-green)] text-white text-center">
                 <th class="p-5 text-[12px] font-black uppercase w-[280px]">Producteur & Coordonnées</th>
                 <th class="p-5 text-[12px] font-black uppercase">Détails des Parcelles</th>
+                <th class="p-5 text-[12px] font-black uppercase w-[160px]">Estimation Production</th>
                 <th class="p-5 text-[12px] font-black uppercase w-[170px]">Contrôle Interne</th>
                 <th class="p-5 text-[12px] font-black uppercase text-right w-[100px]">Actions</th>
               </tr>
@@ -330,10 +383,22 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                         </td>
                       </tr>
                       <tr v-if="!(item.parcelles ?? []).length">
-                        <td colspan="3" class="p-4 text-[11px] opacity-30 uppercase italic">Aucune parcelle</td>
+                        <td colspan="3" class="p-4 text-[12px] opacity-30 uppercase italic">Aucune parcelle</td>
                       </tr>
                     </tbody>
                   </table>
+                </td>
+
+                <!-- Estimation de production -->
+                <td class="p-5 border-l border-border/50">
+                  <div class="space-y-1 text-center">
+                    <p class="text-[15px] font-black tabular-nums leading-none">
+                      {{ (item.parcelles ?? []).reduce((sum, p) => sum + (p.pieds * kgValue), 0).toLocaleString('fr-FR') }} kg
+                    </p>
+                    <p class="text-[10px] font-bold">
+                      {{ (item.parcelles ?? []).reduce((s, p) => s + p.pieds, 0) }} pieds × {{ kgValue }} kg
+                    </p>
+                  </div>
                 </td>
 
                 <!-- Dates contrôle -->
@@ -348,6 +413,8 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                       class="text-[10px] font-bold opacity-30 uppercase italic">Aucun contrôle</p>
                   </div>
                 </td>
+
+
 
                 <!-- Actions -->
                 <td class="p-5 text-right border-l border-border/50">
@@ -494,7 +561,7 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                   class="relative p-6 bg-card border border-[var(--brand-green)] rounded-2xl space-y-5 group/block shadow-sm shadow-black/5">
 
                   <div class="flex items-center justify-between">
-                    <span class="text-[11px] font-black uppercase text-[var(--brand-orange)]">
+                    <span class="text-[12px] font-black uppercase text-[var(--brand-orange)]">
                       Parcelle {{ pIdx + 1 }}
                     </span>
                     <button v-if="form.parcelles.length > 1" @click="removeParcelleBlock(pIdx)"

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Producteur;
 use App\Models\User;
+use App\Models\Poids;
 use App\Http\Requests\ProducteurRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -18,9 +19,12 @@ class ProducteurController extends Controller
             ->latest()
             ->get()
             ->map(fn($p) => $this->format($p));
+        
+        $kg = Poids::first()->kg ?? 150;
 
         return Inertia::render('producteurs/Liste', [
             'producteurs' => $producteurs,
+            'kg' => $kg,
         ]);
     }
 
