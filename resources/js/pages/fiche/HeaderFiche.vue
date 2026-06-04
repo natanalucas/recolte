@@ -1,10 +1,8 @@
 <script setup>
-// On définit les props pour le titre personnalisé
 const props = defineProps({
-  title: String
+  title: String,
+  enqueteurs: { type: Array, default: () => [] }
 });
-
-// Utilisation de defineModel pour une liaison bidirectionnelle propre
 const agentName = defineModel('agentName');
 </script>
 
@@ -13,25 +11,20 @@ const agentName = defineModel('agentName');
     <div class="col-span-2 bg-[var(--card)] rounded-xl shadow p-5 font-bold flex items-center uppercase">
       {{ title }}
     </div>
-    
+
     <div class="col-span-2 bg-[var(--card)] rounded-xl shadow p-5 border border-[var(--sidebar-border)] flex flex-col gap-2">
       <label class="text-xs uppercase font-semibold tracking-wider">Nom de l'agent Traça</label>
-      <input 
-        v-model="agentName" 
-        type="text" 
-        placeholder="Nom complet..." 
-        class="input-line"
-      >
-    </div>
 
-    <!-- <div class="col-span-1 bg-[var(--card-alt)] rounded-xl shadow p-5 border border-[var(--sidebar-border)] flex flex-col gap-2">
-      <label class="text-xs uppercase font-semibold text-center tracking-wider">Fiche N°</label>
-      <input 
-        v-model="ficheNumber" 
-        type="number" 
-        placeholder="000" 
-        class="input-line text-center"
-      >
-    </div> -->
+      <select v-model="agentName" class="input-line">
+        <option value="" disabled>Sélectionner un enquêteur...</option>
+        <option 
+          v-for="user in enqueteurs" 
+          :key="user.id" 
+          :value="user.id"
+        >
+          {{ user.nom }} {{ user.prenom }}
+        </option>
+      </select>
+    </div>
   </div>
 </template>

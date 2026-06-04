@@ -24,4 +24,9 @@ export default defineConfig({
             formVariants: true,
         }),
     ],
+    server: {
+        hmr: {
+            host: 'localhost',
+        },
+    },
 });

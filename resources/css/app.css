@@ -222,3 +222,21 @@
     opacity: 1;
 }
 
+/* ── Select : options fond noir texte blanc ── */
+select option {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+/* Option désactivée (placeholder) */
+select option:disabled {
+    color: #6b7280; /* gris */
+}
+
+/* Option au survol (supporté sur Firefox/Chrome) */
+select option:hover,
+select option:checked {
+    background-color: #1a1a1a;
+    color: #ffffff;
+}
+

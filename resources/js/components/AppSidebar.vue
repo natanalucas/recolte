@@ -14,7 +14,13 @@ import {
     Box,
     Archive,
     ClipboardCheck,
-    Sprout
+    Sprout,
+    ShieldCheck,
+    Headset,
+    UserCheck,
+    BadgeCheck,
+    Award,
+    Users
 } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -45,12 +51,12 @@ const mainNavItems: NavItem[] = [
             },
             {
                 title: 'Soufrage',
-                href: '/fiche-soufrage',
+                href: '/soufrage',
                 icon: Wind, // Icône de vent/gaz pour le soufrage
             },
             {
                 title: 'Triage',
-                href: '/fiche-triage',
+                href: '/triage',
                 icon: ClipboardList, // Icône de formulaire
             },
             {
@@ -118,6 +124,22 @@ const mainNavItems: NavItem[] = [
         title: 'Producteurs',
         href: '/producteurs',
         icon: Sprout, // Icône de formulaire
+    },
+    {
+        title: 'Controleur RAQT',
+        href: '/raqt',
+        icon: ShieldCheck
+    },
+    {
+        title: 'Opérateurs',
+        href: '/operateurs',
+        icon: Users
+    }
+    ,
+    {
+        title: 'Type de Certifications',
+        href: '/type-certifications',
+        icon: Award
     }
 ];
 const footerNavItems: NavItem[] = [

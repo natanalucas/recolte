@@ -118,4 +118,17 @@ class EnqueteurController extends Controller
 
         return redirect()->back()->with('success', 'Suppression radicale effectuée.');
     }
+
+    public function liste()
+    {
+        $enqueteurs = User::whereHas('role', function ($q) {
+                $q->where('slug', 'enqueteur');
+            })
+            ->whereHas('enqueteur', fn($q) => $q->where('is_active', true))
+            ->select('id', 'name') // adapte selon tes colonnes
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($enqueteurs);
+    }
 }
