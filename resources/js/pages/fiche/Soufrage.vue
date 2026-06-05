@@ -49,8 +49,11 @@ interface Parcelle {
     producteur?: { nom: string } | null;
 }
 
+interface TypeCertification { id: number; nom: string; }
+
 // ── Props ─────────────────────────────────────────────
 const props = defineProps<{
+    certifications: TypeCertification[];
     operateurs: Operateur[];
     raqts: Raqt[];
     soufrages: {
@@ -371,12 +374,10 @@ const executeDelete = () => {
                             <input v-model="form.box" type="number" class="input-line w-full" placeholder="—" />
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Concentration</label>
+                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">TYpe de Certification</label>
                             <select v-model="form.concent" class="input-line w-full">
-                                <option value="" disabled>—</option>
-                                <option value="G">G</option>
-                                <option value="F">F</option>
-                                <option value="C">C</option>
+                                <option :value="null" disabled>{{ props.certifications.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}</option>
+                                <option v-for="c in props.certifications" :key="c.id" :value="c.id">{{ c.nom }}</option>
                             </select>
                         </div>
                         <div class="space-y-1.5">
@@ -385,7 +386,7 @@ const executeDelete = () => {
                                 <option value="" disabled>
                                     {{ props.parcelles.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}
                                 </option>
-                                <option v-for="p in props.parcelles" :key="p.id" :value="p.num">
+                                <option v-for="p in props.parcelles" :key="p.id" :value="p.id">
                                     {{ p.num }}
                                     <template v-if="p.localisation"> — {{ p.localisation }}</template>
                                 </option>

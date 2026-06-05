@@ -11,6 +11,7 @@ use Inertia\Inertia;
 use App\Models\Parcelle;
 use App\Models\Enqueteur;
 use App\Models\CodeTraca;
+use App\Models\TypeCertification;
 use Illuminate\Support\Facades\DB;
 
 class SoufrageController extends Controller
@@ -18,6 +19,7 @@ class SoufrageController extends Controller
     public function index()
     {
         return Inertia::render('fiche/Soufrage', [
+            'certifications' => TypeCertification::orderBy('nom')->get(),
             'enqueteurs' => Enqueteur::with('user')
             ->where('is_active', true)
             ->get()
