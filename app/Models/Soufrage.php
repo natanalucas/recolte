@@ -11,8 +11,8 @@ class Soufrage extends Model
     use HasCodeTraca;
     
     protected $fillable = [
-        'agent_name', 'fiche_number', 'raqt_id', 'lieu_traitement',
-        'cycle', 'box', 'concent', 'parcelle', 'code_traca_id',
+        'enqueteur_id', 'fiche_number', 'raqt_id', 'lieu_traitement',
+        'cycle', 'box', 'concent', 'parcelle_id', 'code_traca_id',
         'caissette', 'soufre', 'debut', 'fin',
         'operateur_id', 'controle_raqt',
     ];
@@ -31,5 +31,10 @@ class Soufrage extends Model
     public function raqt(): BelongsTo
     {
         return $this->belongsTo(Raqt::class);
+    }
+
+    public function parcelle(): BelongsTo
+    {
+        return $this->belongsTo(Parcelle::class, 'parcelle_id');
     }
 }

@@ -24,7 +24,10 @@ class TriageController extends Controller
                 'poste'  => $item->poste,
             ]),
             'certifications' => TypeCertification::orderBy('nom')->get(),
-            'triages'        => Triage::with(['codeTraca', 'certification'])->latest()->get(),
+            'triages' => Triage::with([
+                'certification', 
+                'codeTraca.parcelle.producteur' // <-- Charge l'arbre de relations complet
+            ])->latest()->get(),
             'souragesCodes'  => CodeTraca::select('id', 'code')->whereNotNull('code')->distinct()->get(),
         ]);
     }
@@ -40,11 +43,15 @@ class TriageController extends Controller
             'tapis'                  => 'nullable|string',
             'nombre'                 => 'nullable|integer|min:0',
             'qualite'                => 'required|integer|between:1,3',
-            'agent_name' => 'nullable|exists:users,id',
+            // Remplacement de agent_name par enqueteur_id avec la validation adéquate
+            'enqueteur_id'           => 'nullable|exists:enqueteurs,id', 
             'fiche_number'           => 'nullable|string',
         ]);
+        
         $v['tapis'] = json_decode($v['tapis'] ?? '[]');
+        
         Triage::create($v);
+        
         return back()->with('success', 'Ligne ajoutée.');
     }
 

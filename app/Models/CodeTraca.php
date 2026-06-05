@@ -12,6 +12,6 @@ class CodeTraca extends Model
 
     public function parcelle()
     {
-        return $this->hasMany(Parcelle::class, 'parcelle_id');
+        return $this->belongsTo(Parcelle::class, 'parcelle_id');
     }
 }

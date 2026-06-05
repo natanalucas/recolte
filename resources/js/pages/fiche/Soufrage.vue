@@ -24,13 +24,13 @@ interface Raqt {
 
 interface SoufrageRecord {
     id: number;
-    agent_name: string | null;
+    enqueteur_id: number | null; // Modifié
     fiche_number: string | null;
     lieu_traitement: string | null;
     cycle: string;
     box: string;
     concent: string;
-    parcelle: string;
+    parcelle_id: number | null; // Modifié
     code: string;
     caissette: number | null;
     soufre: number | null;
@@ -39,6 +39,7 @@ interface SoufrageRecord {
     controle_raqt: boolean;
     operateur: { id: number; nom: string; prenom: string; travail: 'jour' | 'nuit' } | null;
     raqt: { id: number; nom: string; prenom: string } | null;
+    parcelle?: { id: number; num: string; localisation: string | null } | null; // Ajouté si lié en relation
     created_at: string;
 }
 
@@ -46,7 +47,6 @@ interface Parcelle {
     id: number;
     num: string;
     localisation: string | null;
-    producteur?: { nom: string } | null;
 }
 
 interface TypeCertification { id: number; nom: string; }
@@ -68,7 +68,7 @@ const props = defineProps<{
 }>();
 
 // ── État global de la fiche ───────────────────────────
-const agentName      = ref('');
+const enqueteurId    = ref<number | null>(null); // Modifié (Remplace agentName)
 const ficheNumber    = ref('');
 const selectedRaqt   = ref<number | null>(null);
 const lieuTraitement = ref('');
@@ -85,7 +85,7 @@ const makeForm = () => ({
     cycle:        String(cycleCounter.value).padStart(3, '0'),
     box:          '',
     concent:      '',
-    parcelle:     '',
+    parcelle_id:  null as number | null, // Modifié
     code:         '',
     caissette:    null as number | null,
     soufre:       null as number | null,
@@ -100,9 +100,11 @@ const formSaving  = ref(false);
 const formError   = ref<string | null>(null);
 const formSuccess = ref(false);
 
-// Code traçabilité calculé automatiquement pour l'ajout
-watch([() => form.parcelle, () => form.cycle], () => {
-    const parcelle = String(form.parcelle ?? '').padStart(2, '0').slice(-2);
+// Auto-calcul du code traçabilité basé sur l'ID de la parcelle sélectionnée
+watch([() => form.parcelle_id, () => form.cycle], () => {
+    const findParcelle = props.parcelles.find(p => p.id === form.parcelle_id);
+    const num = findParcelle ? findParcelle.num : '';
+    const parcelle = String(num ?? '').padStart(2, '0').slice(-2);
     const cycle    = String(form.cycle).padStart(3, '0').slice(-3);
     form.code = parcelle + cycle;
 });
@@ -117,6 +119,10 @@ const resetForm = () => {
 
 // ── Soumission formulaire ─────────────────────────────
 const submitForm = () => {
+    if (!enqueteurId.value) {
+        formError.value = 'Veuillez sélectionner un Enquêteur.';
+        return;
+    }
     if (!selectedRaqt.value) {
         formError.value = 'Veuillez sélectionner un RAQT.';
         return;
@@ -126,7 +132,7 @@ const submitForm = () => {
     formSuccess.value = false;
 
     router.post(route('soufrage.store'), {
-        agent_name:      agentName.value,
+        enqueteur_id:    enqueteurId.value, // Modifié
         fiche_number:    ficheNumber.value,
         raqt_id:         selectedRaqt.value,
         lieu_traitement: lieuTraitement.value,
@@ -159,7 +165,6 @@ const fmtDate = (d: string | null) => {
 // ── État du tableau & Réactivité Contrôle RAQT ────────
 const controleMap = reactive<Record<number, boolean>>({});
 
-// Synchronisation initiale et lors des mises à jour d'Inertia (Résout le problème)
 watch(() => props.soufrages.data, (newData) => {
     newData.forEach(s => {
         controleMap[s.id] = s.controle_raqt;
@@ -172,7 +177,6 @@ const toggleControle = (id: number) => {
     const currentValue = controleMap[id];
     const newValue = !currentValue;
     
-    // Changement optimiste pour l'UI
     controleMap[id] = newValue;
     savingControle[id] = true;
 
@@ -180,13 +184,8 @@ const toggleControle = (id: number) => {
         controle_raqt: newValue,
     }, {
         preserveScroll: true,
-        onFinish: () => { 
-            savingControle[id] = false; 
-        },
-        onError:  () => { 
-            // En cas d'erreur côté serveur, retour en arrière (rollback)
-            controleMap[id] = currentValue; 
-        }, 
+        onFinish: () => { savingControle[id] = false; },
+        onError:  () => { controleMap[id] = currentValue; }, 
     });
 };
 
@@ -196,7 +195,7 @@ const editForm   = reactive({
     cycle: '',
     box: '',
     concent: '',
-    parcelle: '',
+    parcelle_id: null as number | null, // Modifié
     code: '',
     caissette: null as number | null,
     soufre: null as number | null,
@@ -214,7 +213,7 @@ const openEdit = (row: SoufrageRecord) => {
         cycle:         row.cycle,
         box:           row.box || '',
         concent:       row.concent || '',
-        parcelle:      row.parcelle || '',
+        parcelle_id:   row.parcelle_id, // Modifié
         code:          row.code,
         caissette:     row.caissette,
         soufre:        row.soufre,
@@ -231,10 +230,12 @@ const closeEdit = () => {
     editError.value = null;
 };
 
-// Auto-calcul du code de traçabilité en édition
-watch([() => editForm.parcelle, () => editForm.cycle], () => {
+// Auto-calcul du code en édition
+watch([() => editForm.parcelle_id, () => editForm.cycle], () => {
     if (!editingId.value) return;
-    const parcelle = String(editForm.parcelle ?? '').padStart(2, '0').slice(-2);
+    const findParcelle = props.parcelles.find(p => p.id === editForm.parcelle_id);
+    const num = findParcelle ? findParcelle.num : '';
+    const parcelle = String(num ?? '').padStart(2, '0').slice(-2);
     const cycle    = String(editForm.cycle ?? '').padStart(3, '0').slice(-3);
     editForm.code  = parcelle + cycle;
 });
@@ -248,7 +249,7 @@ const saveEdit = () => {
         cycle:         editForm.cycle,
         box:           editForm.box,
         concent:       editForm.concent,
-        parcelle:      editForm.parcelle,
+        parcelle_id:   editForm.parcelle_id, // Modifié
         code:          editForm.code,
         caissette:     editForm.caissette,
         soufre:        editForm.soufre,
@@ -308,11 +309,10 @@ const executeDelete = () => {
 
             <HeaderFiche
                 title="Registre de Soufrage"
-                v-model:agentName="agentName"
+                v-model:agentName="ficheNumber" 
                 :enqueteurs="props.enqueteurs"
             />
 
-            <!-- ── Infos fiche ── -->
             <div class="flex gap-4">
                 <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-xl p-5 shadow-sm flex-1 space-y-3">
                     <div class="flex items-baseline gap-3">
@@ -341,22 +341,6 @@ const executeDelete = () => {
                 </div>
             </div>
 
-            <!-- ── RAQT ── -->
-            <div class="flex justify-end">
-                <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-xl p-5 shadow-sm flex items-baseline gap-3">
-                    <span class="text-[12px] uppercase tracking-wider font-bold shrink-0">Nom RAQT :</span>
-                    <select v-model="selectedRaqt" class="input-line min-w-[200px]">
-                        <option :value="null" disabled>
-                            {{ props.raqts.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}
-                        </option>
-                        <option v-for="r in props.raqts" :key="r.id" :value="r.id">
-                            {{ r.prenom }} {{ r.nom }}
-                        </option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- ── FORMULAIRE D'AJOUT ── -->
             <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-2xl shadow-sm overflow-hidden">
                 <div class="px-6 py-4 bg-[var(--brand-green)] flex items-center justify-between">
                     <h2 class="text-[13px] font-black uppercase tracking-widest text-white flex items-center gap-2">
@@ -368,22 +352,49 @@ const executeDelete = () => {
                 </div>
 
                 <div class="p-6 space-y-5">
+
+                    <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-xl p-5 shadow-sm grid grid-cols-2 gap-4">
+    <div class="space-y-1.5">
+        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+            Enquêteur Responsable *
+        </label>
+        <select v-model="enqueteurId" class="input-line w-full">
+            <option :value="null">— choisir un enquêteur —</option>
+            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                {{ e.prenom }} {{ e.nom }}
+            </option>
+        </select>
+    </div>
+
+    <div class="space-y-1.5">
+        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+            Nom RAQT *
+        </label>
+        <select v-model="selectedRaqt" class="input-line w-full">
+            <option :value="null" disabled>
+                {{ props.raqts.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}
+            </option>
+            <option v-for="r in props.raqts" :key="r.id" :value="r.id">
+                {{ r.prenom }} {{ r.nom }}
+            </option>
+        </select>
+    </div>
+</div>
                     <div class="grid grid-cols-4 gap-4">
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">N° Box</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">N° Box</label>
                             <input v-model="form.box" type="number" class="input-line w-full" placeholder="—" />
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">TYpe de Certification</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Type de Certification</label>
                             <select v-model="form.concent" class="input-line w-full">
                                 <option :value="null" disabled>{{ props.certifications.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}</option>
                                 <option v-for="c in props.certifications" :key="c.id" :value="c.id">{{ c.nom }}</option>
                             </select>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Parcelle</label>
-                            <select v-model="form.parcelle" class="input-line w-full">
-                                <option value="" disabled>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Parcelle</label>
+                            <select v-model="form.parcelle_id" class="input-line w-full"> <option :value="null" disabled>
                                     {{ props.parcelles.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}
                                 </option>
                                 <option v-for="p in props.parcelles" :key="p.id" :value="p.id">
@@ -393,7 +404,7 @@ const executeDelete = () => {
                             </select>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Code Traçabilité</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Code Traçabilité</label>
                             <input :value="form.code" type="text"
                                 class="input-line w-full font-mono tracking-widest text-center bg-[var(--sidebar-border)]/10 cursor-not-allowed opacity-70"
                                 disabled placeholder="Auto" />
@@ -402,15 +413,15 @@ const executeDelete = () => {
 
                     <div class="grid grid-cols-3 gap-4">
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Qté Caissette</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Qté Caissette</label>
                             <input v-model="form.caissette" type="number" class="input-line w-full" placeholder="—" />
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Qté Soufre (g)</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Qté Soufre (g)</label>
                             <input v-model="form.soufre" type="number" class="input-line w-full" placeholder="—" />
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Opérateur</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Opérateur</label>
                             <select v-model="form.operateur_id" class="input-line w-full">
                                 <option :value="null" disabled>
                                     {{ props.operateurs.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}
@@ -424,15 +435,15 @@ const executeDelete = () => {
 
                     <div class="grid grid-cols-3 gap-4 items-end">
                         <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Début</label>
-                            <input v-model="form.debut" type="datetime-local" class="input-line w-full text-[12px] font-bold" />
+                            <label class="text-[12px] font-black uppercase tracking-wider">Début</label>
+                            <input v-model="form.debut" type="datetime-local" class="input-line w-full text-[12px] font-bold" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                         </div>
                         <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Fin</label>
-                            <input v-model="form.fin" type="datetime-local" class="input-line w-full text-[12px] font-bold" />
+                            <label class="text-[12px] font-black uppercase tracking-wider">Fin</label>
+                            <input v-model="form.fin" type="datetime-local" class="input-line w-full text-[12px] font-bold" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Contrôle RAQT</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Contrôle RAQT</label>
                             <label class="flex items-center gap-3 cursor-pointer h-9">
                                 <div class="relative">
                                     <input type="checkbox" v-model="form.controle_raqt" class="sr-only peer" />
@@ -461,11 +472,7 @@ const executeDelete = () => {
                                 Réinitialiser
                             </button>
                             <button @click="submitForm" :disabled="formSaving" class="h-10 px-6 bg-[var(--brand-green)] text-white rounded-xl text-[12px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-[var(--brand-green)]/20 active:scale-95 transition-all disabled:opacity-50">
-                                <svg v-if="formSaving" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                                </svg>
-                                <Save v-else class="w-4 h-4" />
+                                <Save class="w-4 h-4" />
                                 {{ formSaving ? 'Enregistrement...' : 'Enregistrer la ligne' }}
                             </button>
                         </div>
@@ -473,7 +480,6 @@ const executeDelete = () => {
                 </div>
             </div>
 
-            <!-- ── TABLEAU DE CONSULTATION ── -->
             <div class="space-y-3">
                 <div class="flex items-center justify-between">
                     <h2 class="text-[13px] font-black uppercase tracking-widest flex items-center gap-2">
@@ -514,7 +520,6 @@ const executeDelete = () => {
                                 </tr>
 
                                 <template v-for="row in props.soufrages.data" :key="row.id">
-                                    <!-- ── Ligne normale ── -->
                                     <tr v-if="editingId !== row.id" class="hover:bg-[var(--brand-green)]/5 transition-colors text-[12px]">
                                         <td class="px-3 py-3 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">{{ row.cycle }}</td>
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.box || '—' }}</td>
@@ -524,9 +529,11 @@ const executeDelete = () => {
                                             </span>
                                             <span v-else>—</span>
                                         </td>
-                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.parcelle || '—' }}</td>
+                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
+                                            {{ row.parcelle ? row.parcelle.num : '—' }}
+                                        </td>
                                         <td class="px-3 py-3 text-center font-mono text-[11px] border-r border-[var(--sidebar-border)]/30">
-                                            {{ row.parcelle && row.cycle ? String(row.parcelle).padStart(2, '0').slice(0, 2) + row.cycle : '—' }}
+                                            {{ row.parcelle && row.cycle ? String(row.parcelle.num).padStart(2, '0').slice(0, 2) + row.cycle : '—' }}
                                         </td>
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.caissette ?? '—' }}</td>
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.soufre ?? '—' }}</td>
@@ -546,11 +553,7 @@ const executeDelete = () => {
                                         </td>
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
                                             <button @click="toggleControle(row.id)" :disabled="savingControle[row.id]" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase transition-all disabled:opacity-50" :class="controleMap[row.id] ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 hover:bg-emerald-200' : 'bg-[var(--sidebar-border)]/20 hover:bg-[var(--sidebar-border)]/40'">
-                                                <svg v-if="savingControle[row.id]" class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                                                </svg>
-                                                <CheckCircle2 v-else-if="controleMap[row.id]" class="w-3 h-3" />
+                                                <CheckCircle2 v-if="controleMap[row.id]" class="w-3 h-3" />
                                                 <span>{{ controleMap[row.id] ? 'Contrôlé' : 'En attente' }}</span>
                                             </button>
                                         </td>
@@ -566,7 +569,6 @@ const executeDelete = () => {
                                         </td>
                                     </tr>
 
-                                    <!-- ── Ligne en mode édition ── -->
                                     <tr v-else class="bg-[var(--brand-green)]/5 text-[12px] border-2 border-[var(--brand-green)]">
                                         <td class="px-2 py-2 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">
                                             <input v-model="editForm.cycle" type="text" class="input-line text-center w-full font-mono font-bold" />
@@ -583,9 +585,9 @@ const executeDelete = () => {
                                             </select>
                                         </td>
                                         <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <select v-model="editForm.parcelle" class="input-line w-full text-center font-bold">
-                                                <option value="">—</option>
-                                                <option v-for="p in props.parcelles" :key="p.id" :value="p.num">
+                                            <select v-model="editForm.parcelle_id" class="input-line w-full text-center font-bold">
+                                                <option :value="null">—</option>
+                                                <option v-for="p in props.parcelles" :key="p.id" :value="p.id">
                                                     {{ p.num }}
                                                 </option>
                                             </select>
@@ -599,11 +601,11 @@ const executeDelete = () => {
                                         <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
                                             <input v-model="editForm.soufre" type="number" class="input-line text-center w-full" placeholder="—" />
                                         </td>
-                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <input v-model="editForm.debut" type="datetime-local" class="input-line w-full text-[11px] font-medium" />
+                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                            <input v-model="editForm.debut" type="datetime-local" class="input-line w-full text-[11px] font-medium" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                         </td>
-                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <input v-model="editForm.fin" type="datetime-local" class="input-line w-full text-[11px] font-medium" />
+                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                            <input v-model="editForm.fin" type="datetime-local" class="input-line w-full text-[11px] font-medium" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                         </td>
                                         <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
                                             <select v-model="editForm.operateur_id" class="input-line w-full text-center text-[11px]">
@@ -623,11 +625,7 @@ const executeDelete = () => {
                                             <div class="flex flex-col gap-1 items-center justify-center">
                                                 <div class="flex gap-1">
                                                     <button @click="saveEdit" :disabled="editSaving" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase bg-[var(--brand-green)] text-white rounded-md shadow hover:opacity-90 transition-all disabled:opacity-50">
-                                                        <svg v-if="editSaving" class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                                                        </svg>
-                                                        <Check v-else class="w-3 h-3" />
+                                                        <Check class="w-3 h-3" />
                                                         <span>Sauver</span>
                                                     </button>
                                                     <button @click="closeEdit" :disabled="editSaving" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase border border-[var(--sidebar-border)] bg-[var(--card)] rounded-md hover:bg-[var(--sidebar-border)]/20 transition-all">
@@ -645,52 +643,46 @@ const executeDelete = () => {
                         </table>
                     </div>
                 </div>
-
-                <!-- Pagination -->
-                <div v-if="props.soufrages.last_page > 1" class="flex items-center justify-between pt-3">
-                    <span class="text-[11px] font-bold opacity-40 uppercase tracking-widest">
-                        Page {{ props.soufrages.current_page }} / {{ props.soufrages.last_page }} · {{ props.soufrages.total }} lignes
-                    </span>
-
-                    <div class="flex items-center gap-1">
-                        <template v-for="link in props.soufrages.links" :key="link.label">
-                            <button v-if="link.url" @click="router.get(link.url, {}, { preserveScroll: true })" :class="['h-8 min-w-[2rem] px-2 rounded-lg text-[11px] font-black transition-all', link.active ? 'bg-[var(--brand-green)] text-white shadow shadow-[var(--brand-green)]/20' : 'border border-[var(--sidebar-border)] hover:border-[var(--brand-green)] hover:text-[var(--brand-green)]']" v-html="link.label" />
-                            <span v-else class="h-8 min-w-[2rem] px-2 flex items-center justify-center text-[11px] opacity-25 font-black" v-html="link.label" />
-                        </template>
+                
+                </div>
+        </div>
+        <!-- ── MODAL DE CONFIRMATION DE SUPPRESSION (À RAJOUTER ICI) ── -->
+        <div v-if="showDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+            <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-2xl p-6 shadow-xl max-w-sm w-full space-y-4 animate-scale-in">
+                <div class="flex items-center gap-3 text-red-500">
+                    <div class="p-3 bg-red-500/10 rounded-xl">
+                        <Trash2 class="w-6 h-6" />
                     </div>
+                    <div>
+                        <h3 class="text-[14px] font-black uppercase tracking-wider text-[var(--text)]">Supprimer la ligne ?</h3>
+                        <p class="text-[11px] opacity-60 uppercase tracking-widest font-bold">Cette action est irréversible</p>
+                    </div>
+                </div>
+
+                <p class="text-[12px] font-medium opacity-80 leading-relaxed">
+                    Êtes-vous sûr de vouloir supprimer la ligne de soufrage pour le <span class="font-mono font-bold text-red-500">Cycle #{{ deleteTarget?.cycle }}</span> ?
+                </p>
+
+                <div class="flex gap-3 pt-2 border-t border-[var(--sidebar-border)]/30">
+                    <button 
+                        @click="showDeleteModal = false; deleteTarget = null" 
+                        type="button" 
+                        :disabled="deleting"
+                        class="flex-1 h-9 px-4 border border-[var(--sidebar-border)] rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-[var(--sidebar-border)]/20 transition-all disabled:opacity-50"
+                    >
+                        Annuler
+                    </button>
+                    <button 
+                        @click="executeDelete" 
+                        type="button" 
+                        :disabled="deleting"
+                        class="flex-1 h-9 px-4 bg-red-500 text-white rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-red-600 shadow-lg shadow-red-500/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1"
+                    >
+                        <Trash2 class="w-3.5 h-3.5" />
+                        {{ deleting ? 'Suppression...' : 'Supprimer' }}
+                    </button>
                 </div>
             </div>
         </div>
-
-        <!-- ── Modal Suppression ── -->
-        <Teleport to="body">
-            <div v-if="showDeleteModal" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
-                <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
-                    <div class="p-8 text-center space-y-4">
-                        <div class="w-14 h-14 bg-red-100 dark:bg-red-950/40 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-200 dark:border-red-800">
-                            <Trash2 class="w-7 h-7" />
-                        </div>
-                        <div>
-                            <h2 class="font-black uppercase tracking-widest text-[var(--text)]">Supprimer la ligne ?</h2>
-                            <p class="text-[12px] text-[var(--text)]/50 font-bold mt-1.5">
-                                Cycle <span class="font-black text-[var(--text)]">{{ deleteTarget?.cycle }}</span> — cette action est irréversible.
-                            </p>
-                        </div>
-                    </div>
-                    <div class="px-6 pb-6 flex gap-3">
-                        <button @click="showDeleteModal = false; deleteTarget = null" :disabled="deleting" class="flex-1 h-11 text-[12px] font-black uppercase border border-[var(--sidebar-border)] rounded-xl hover:bg-[var(--sidebar-border)]/20 transition-all disabled:opacity-50">
-                            Annuler
-                        </button>
-                        <button @click="executeDelete" :disabled="deleting" class="flex-1 h-11 text-[12px] font-black uppercase bg-red-600 text-white rounded-xl shadow-lg shadow-red-600/20 disabled:opacity-60 flex items-center justify-center gap-2 transition-all active:scale-95">
-                            <svg v-if="deleting" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                            </svg>
-                            {{ deleting ? 'Suppression...' : 'Supprimer' }}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </Teleport>
     </AppLayout>
 </template>

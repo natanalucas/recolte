@@ -29,7 +29,7 @@ interface ReceptionLigne {
 
 interface FicheReception {
     id:                  number;
-    agent_name:          string | null;
+    enqueteur_id:        number | null;
     fiche_number:        string | null;
     poids_par_caissette: number | null;
     lignes: {
@@ -63,7 +63,7 @@ const props = defineProps<{
 
 // ─── Poids global (hors modal) ────────────────────────────────────────────────
 
-const agentName           = ref('');
+const enqueteurId         = ref<number | null>(null);
 const ficheNumber         = ref('');
 const poidsGlobal         = ref<number | null>(props.poids_par_caissette || null);
 const poidsSaving         = ref(false);
@@ -85,7 +85,7 @@ const savePoids = () => {
 
 const showModal      = ref(false);
 const editingFicheId = ref<number | null>(null);
-const modalAgentName = ref('');
+const modalEnqueteurId = ref<number | null>(null); // <-- Remplacé ici
 const modalFicheNum  = ref('');
 const modalSaving    = ref(false);
 const modalError     = ref<string | null>(null);
@@ -140,7 +140,7 @@ const ligneKg = (caissette: number | null): string | null =>
 
 const openAddModal = () => {
     editingFicheId.value = null;
-    modalAgentName.value = agentName.value;
+    modalEnqueteurId.value  = enqueteurId.value; // <-- Remplacé ici
     modalFicheNum.value  = ficheNumber.value;
     modalError.value     = null;
     modalSuccess.value   = false;
@@ -150,7 +150,7 @@ const openAddModal = () => {
 
 const openEditModal = (fiche: FicheReception) => {
     editingFicheId.value = fiche.id;
-    modalAgentName.value = fiche.agent_name ?? '';
+    modalEnqueteurId.value = fiche.enqueteur_id ?? null; 
     modalFicheNum.value  = fiche.fiche_number ?? '';
     modalError.value     = null;
     modalSuccess.value   = false;
@@ -184,7 +184,7 @@ const submitModal = () => {
     modalSuccess.value = false;
 
     const payload = {
-        agent_name:          modalAgentName.value,
+        enqueteur_id:        modalEnqueteurId.value, 
         fiche_number:        modalFicheNum.value,
         poids_par_caissette: poidsGlobal.value,
         lignes: modalRows.map(({ _key, open, ...r }) => r),
@@ -246,33 +246,33 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="p-6 space-y-5 bg-[var(--background)] text-[var(--text)] font-sans">
 
-<HeaderFiche 
-    title="Fiche de Traçabilité de l'Expédition" 
-    v-model:agentName="agentName"
-    :enqueteurs="props.enqueteurs"
-  />
+            <HeaderFiche 
+                title="Fiche de Traçabilité de l'Expédition" 
+                v-model:enqueteurId="enqueteurId" 
+                :enqueteurs="props.enqueteurs"
+            />
 
             <!-- ══ POIDS GLOBAL — hors modal ════════════════════════════════ -->
             <div class="flex items-center gap-4 bg-[var(--card)]
                         border border-[var(--sidebar-border)] rounded-2xl px-5 py-3 w-fit shadow-sm">
-                <Weight class="w-5 h-5 text-[var(--brand-green)] shrink-0" />
-                <span class="text-[12px] font-black uppercase tracking-widest text-[var(--brand-green)] whitespace-nowrap">
+                <Weight class="w-5 h-5 text-[var(--brand-orange)] shrink-0" />
+                <span class="text-[12px] font-black uppercase tracking-widest text-[var(--brand-orange)] whitespace-nowrap">
                     Poids litchi / caissette
                 </span>
                 <select
                     v-model="poidsGlobal"
                     class="bg-transparent outline-none text-[15px] font-black text-center
-                        border-b-2 border-[var(--brand-green)]/30
-                        focus:border-[var(--brand-green)] transition-colors cursor-pointer"
+                        border-b-2 border-[var(--brand-orange)]/30
+                        focus:border-[var(--brand-orange)] transition-colors cursor-pointer"
                 >
                     <option :value="16">16</option>
                     <option :value="18">18</option>
                     <option :value="20">20</option>
                 </select>
-                <span class="text-[12px] text-gray-400 font-bold">kg</span>
-                <span class="text-[11px] text-gray-400 italic hidden sm:block">
+                <span class="text-[12px] font-bold">kg</span>
+                <!-- <span class="text-[11px] text-gray-400 italic hidden sm:block">
                     mémorisé pour toutes les fiches
-                </span>
+                </span> -->
                 <button @click="savePoids" :disabled="poidsSaving"
                     class="h-8 px-4 bg-[var(--brand-green)] text-white rounded-xl
                            text-[11px] font-black uppercase tracking-widest
@@ -442,36 +442,39 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                         <div class="p-6 space-y-5">
 
                             <!-- ── Bloc 1 : infos fiche ──────────────────── -->
-                            <!-- <div class="bg-[var(--card)] border border-[var(--sidebar-border)]
-                                        rounded-2xl overflow-hidden">
+                            <!-- ── Bloc 1 : infos fiche ──────────────────── -->
+                            <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-2xl overflow-hidden">
                                 <div class="flex items-center gap-3 px-5 py-3
                                             bg-[var(--brand-green)]/8 border-b border-[var(--sidebar-border)]">
                                     <span class="w-6 h-6 rounded-full bg-[var(--brand-green)]/15
-                                                 text-[var(--brand-green)] text-[11px] font-black
-                                                 flex items-center justify-center shrink-0">1</span>
+                                                text-[var(--brand-green)] text-[11px] font-black
+                                                flex items-center justify-center shrink-0">1</span>
                                     <span class="text-[12px] font-black uppercase tracking-widest">
                                         Informations de la fiche
                                     </span>
                                 </div>
                                 <div class="p-5 grid grid-cols-2 gap-4">
                                     <div class="space-y-1.5">
-                                        <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
-                                            Agent
+                                        <label class="text-[12px] font-black uppercase tracking-wider">
+                                            Enquêteur
                                         </label>
-                                        <input v-model="modalAgentName" type="text"
-                                            placeholder="Nom de l'agent"
-                                            class="input-line w-full" />
+                                        <select v-model="modalEnqueteurId" class="input-line w-full">
+                                            <option :value="null">— choisir —</option>
+                                            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                                                {{ e.prenom }} {{ e.nom }}
+                                            </option>
+                                        </select>
                                     </div>
-                                    <div class="space-y-1.5">
-                                        <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                    <!-- <div class="space-y-1.5">
+                                        <label class="text-[12px] font-black uppercase tracking-wider opacity-60">
                                             N° fiche
                                         </label>
                                         <input v-model="modalFicheNum" type="text"
                                             placeholder="ex: REC-2024-001"
                                             class="input-line w-full" />
-                                    </div>
+                                    </div> -->
                                 </div>
-                            </div> -->
+                            </div>
 
                             <!-- ── Bloc 2 : lignes de réception ─────────── -->
                             <div class="bg-[var(--card)] border border-[var(--sidebar-border)]
@@ -480,7 +483,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                                             bg-[var(--brand-green)]/8 border-b border-[var(--sidebar-border)]">
                                     <span class="w-6 h-6 rounded-full bg-[var(--brand-green)]/15
                                                  text-[var(--brand-green)] text-[11px] font-black
-                                                 flex items-center justify-center shrink-0">1</span>
+                                                 flex items-center justify-center shrink-0">2</span>
                                     <span class="text-[12px] font-black uppercase tracking-widest">
                                         Lignes de réception
                                     </span>
@@ -501,8 +504,8 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                                         <div class="flex items-center gap-3 px-4 py-2.5
                                                     bg-[var(--background)] border-b border-[var(--sidebar-border)]"
                                              :class="{ 'border-b-0': !row.open }">
-                                            <span class="w-6 h-6 rounded-full bg-[var(--brand-green)]/10
-                                                         text-[var(--brand-green)] text-[11px] font-black
+                                            <span class="w-6 h-6 rounded-full bg-[var(--brand-orange)]/10
+                                                         text-[var(--brand-orange)] text-[11px] font-black
                                                          flex items-center justify-center shrink-0">
                                                 {{ i + 1 }}
                                             </span>
@@ -512,22 +515,22 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                                                 <span class="text-[12px] font-black">
                                                     {{ rowSummary(row).num }}
                                                 </span>
-                                                <span class="text-[12px] opacity-50">
+                                                <span class="text-[12px]">
                                                     {{ row.caissette ?? '—' }} caissettes
                                                 </span>
                                                 <span v-if="rowSummary(row).kg"
                                                     class="px-2.5 py-0.5 rounded-full
-                                                           bg-[var(--brand-green)]/10 text-[var(--brand-green)]
+                                                           bg-[var(--brand-orange)]/10 text-[var(--brand-orange)]
                                                            text-[11px] font-black">
                                                     {{ rowSummary(row).kg }}
                                                 </span>
                                                 <span v-if="row.voiture"
-                                                    class="text-[11px] opacity-40">
+                                                    class="text-[12px]">
                                                     {{ row.voiture }}
                                                 </span>
                                             </template>
                                             <span v-else
-                                                class="text-[12px] font-black uppercase tracking-widest opacity-40">
+                                                class="text-[12px] font-black uppercase tracking-widest">
                                                 Ligne de collecte
                                             </span>
 
@@ -551,7 +554,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
 
                                             <!-- N° Parcelle -->
                                             <div class="space-y-1.5">
-                                                <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                                <label class="text-[12px] font-black uppercase tracking-wider">
                                                     N° Parcelle
                                                 </label>
                                                 <select v-model="row.parcelle_id" class="input-line w-full">
@@ -565,7 +568,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
 
                                             <!-- Nb caissettes -->
                                             <div class="space-y-1.5">
-                                                <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                                <label class="text-[12px] font-black uppercase tracking-wider">
                                                     Nb caissettes livrées
                                                 </label>
                                                 <input v-model="row.caissette"
@@ -575,20 +578,20 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
 
                                             <!-- Quantité kg (calculée) -->
                                             <div class="space-y-1.5">
-                                                <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                                <label class="text-[12px] font-black uppercase tracking-wider">
                                                     Quantité litchis (kg)
                                                 </label>
                                                 <div class="flex items-center gap-2 h-10">
                                                     <span v-if="ligneKg(row.caissette)"
                                                         class="px-3 py-1.5 rounded-xl
-                                                               bg-[var(--brand-green)]/10
-                                                               text-[var(--brand-green)]
+                                                               bg-[var(--brand-orange)]/10
+                                                               text-[var(--brand-orange)]
                                                                text-[13px] font-black">
                                                         {{ ligneKg(row.caissette) }} kg
                                                     </span>
-                                                    <span v-else class="text-[12px] opacity-30 font-bold">—</span>
+                                                    <span v-else class="text-[12px] font-bold">—</span>
                                                     <span v-if="row.caissette && poidsGlobal"
-                                                        class="text-[10px] opacity-40">
+                                                        class="text-[10px]">
                                                         {{ row.caissette }} × {{ poidsGlobal }}
                                                     </span>
                                                 </div>
@@ -596,7 +599,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
 
                                             <!-- Voiture -->
                                             <div class="space-y-1.5">
-                                                <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                                <label class="text-[12px] font-black uppercase tracking-wider">
                                                     N° Voiture
                                                 </label>
                                                 <input v-model="row.voiture" type="text"
@@ -605,7 +608,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
 
                                             <!-- Commune -->
                                             <div class="space-y-1.5">
-                                                <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                                <label class="text-[12px] font-black uppercase tracking-wider">
                                                     Commune / District
                                                 </label>
                                                 <input v-model="row.commune" type="text"
@@ -613,33 +616,36 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                                             </div>
 
                                             <!-- Collecte -->
-                                            <div class="space-y-1.5">
-                                                <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                            <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                                <label class="text-[12px] font-black uppercase tracking-wider">
                                                     Collecte
                                                 </label>
                                                 <input v-model="row.collecte"
                                                     type="datetime-local"
-                                                    class="input-line w-full text-[12px]" />
+                                                    class="input-line w-full text-[12px]" 
+                                                    @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                             </div>
 
                                             <!-- Départ champ -->
-                                            <div class="space-y-1.5">
-                                                <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                            <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                                <label class="text-[12px] font-black uppercase tracking-wider">
                                                     Départ au champ
                                                 </label>
                                                 <input v-model="row.depart_champ"
                                                     type="datetime-local"
-                                                    class="input-line w-full text-[12px]" />
+                                                    class="input-line w-full text-[12px]" 
+                                                    @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                             </div>
 
                                             <!-- Retour station -->
-                                            <div class="space-y-1.5">
-                                                <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                                            <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                                <label class="text-[12px] font-black uppercase tracking-wider">
                                                     Retour à la station
                                                 </label>
                                                 <input v-model="row.retour_station"
                                                     type="datetime-local"
-                                                    class="input-line w-full text-[12px]" />
+                                                    class="input-line w-full text-[12px]" 
+                                                    @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                             </div>
 
                                         </div>
@@ -647,8 +653,8 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
 
                                     <!-- Bouton ajouter ligne -->
                                     <button @click="addModalRow"
-                                        class="w-full h-9 border-2 border-dashed border-[var(--brand-green)]/30
-                                               hover:border-[var(--brand-green)] text-[var(--brand-green)]
+                                        class="w-full h-9 border-2 border-dashed border-[var(--brand-orange)]/30
+                                               hover:border-[var(--brand-orange)] text-[var(--brand-orange)]
                                                rounded-xl text-[11px] font-black uppercase tracking-widest
                                                flex items-center justify-center gap-2
                                                transition-all active:scale-[0.99]">
@@ -659,12 +665,12 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                                     <div v-if="totalCaissettes > 0"
                                         class="flex items-center justify-end gap-3
                                                pt-3 border-t border-[var(--sidebar-border)]/50">
-                                        <span class="text-[11px] font-bold opacity-50 uppercase tracking-widest">
+                                        <span class="text-[12px] font-bold uppercase tracking-widest">
                                             Total · {{ totalCaissettes }} caissettes
                                         </span>
                                         <span v-if="totalKg"
-                                            class="px-3 py-1 rounded-xl bg-[var(--brand-green)]/10
-                                                   text-[var(--brand-green)] text-[13px] font-black">
+                                            class="px-3 py-1 rounded-xl bg-[var(--brand-orange)]/10
+                                                   text-[var(--brand-orange)] text-[13px] font-black">
                                             {{ totalKg }} kg
                                         </span>
                                     </div>

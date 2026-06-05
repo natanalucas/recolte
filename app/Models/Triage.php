@@ -10,7 +10,7 @@ class Triage extends Model
     use HasCodeTraca;
 
     protected $fillable = [
-        'agent_name', 'fiche_number', 'code_traca_id', 'type_carton',
+        'enqueteur_id', 'fiche_number', 'code_traca_id', 'type_carton',
         'type_certification_id', 'debut', 'fin', 'tapis', 'nombre', 'qualite',
     ];
 
@@ -23,5 +23,10 @@ class Triage extends Model
     public function certification()
     {
         return $this->belongsTo(TypeCertification::class, 'type_certification_id');
+    }
+
+    public function codeTraca()
+    {
+        return $this->belongsTo(CodeTraca::class, 'code_traca_id');
     }
 }

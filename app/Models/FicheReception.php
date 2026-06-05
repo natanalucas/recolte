@@ -9,7 +9,7 @@ class FicheReception extends Model
     protected $fillable = [
         'poids_par_caissette', 
         'fiche_number',
-        'agent_name'
+        'enqueteur_id',
     ];
 
     public function lignes()

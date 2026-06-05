@@ -34,7 +34,7 @@ class FicheReceptionController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'agent_name'             => 'max:255',
+            'enqueteur_id'           => 'nullable|exists:enqueteurs,id',
             'fiche_number'           => 'nullable|string|max:255',
             'poids_par_caissette'    => 'nullable|numeric|min:0',
             'lignes'                 => 'required|array|min:1',
@@ -53,7 +53,7 @@ class FicheReceptionController extends Controller
         }
 
         $fiche = FicheReception::create([
-            'agent_name'          => $data['agent_name'],
+            'enqueteur_id'        => $data['enqueteur_id'],
             'fiche_number'        => $data['fiche_number'],
             'poids_par_caissette' => $data['poids_par_caissette'],
         ]);
@@ -68,7 +68,7 @@ class FicheReceptionController extends Controller
     public function update(Request $request, FicheReception $reception)
     {
         $data = $request->validate([
-            'agent_name'             => 'nullable|max:255',
+            'enqueteur_id'           => 'nullable|exists:enqueteurs,id',
             'fiche_number'           => 'nullable|string|max:255',
             'poids_par_caissette'    => 'nullable|numeric|min:0',
             'lignes'                 => 'required|array|min:1',
@@ -86,7 +86,7 @@ class FicheReceptionController extends Controller
         }
 
         $reception->update([
-            'agent_name'          => $data['agent_name'],
+            'enqueteur_id'        => $data['enqueteur_id'],
             'fiche_number'        => $data['fiche_number'],
             'poids_par_caissette' => $data['poids_par_caissette'],
         ]);

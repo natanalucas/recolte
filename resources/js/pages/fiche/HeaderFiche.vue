@@ -12,7 +12,7 @@ const agentName = defineModel('agentName');
       {{ title }}
     </div>
 
-    <div class="col-span-2 bg-[var(--card)] rounded-xl shadow p-5 border border-[var(--sidebar-border)] flex flex-col gap-2">
+    <!-- <div class="col-span-2 bg-[var(--card)] rounded-xl shadow p-5 border border-[var(--sidebar-border)] flex flex-col gap-2">
       <label class="text-xs uppercase font-semibold tracking-wider">Nom de l'agent Traça</label>
 
       <select v-model="agentName" class="input-line">
@@ -25,6 +25,6 @@ const agentName = defineModel('agentName');
           {{ user.nom }} {{ user.prenom }}
         </option>
       </select>
-    </div>
+    </div> -->
   </div>
 </template>

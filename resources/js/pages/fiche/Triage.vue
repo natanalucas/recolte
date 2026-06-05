@@ -10,11 +10,37 @@ import QRCode from 'qrcode';
 const breadcrumbs: BreadcrumbItem[] = [];
 
 interface TypeCertification { id: number; nom: string; }
+// Dans Triage.vue
+interface Producteur {
+    id: number;
+    nom: string;
+    prenom: string;
+}
+
+interface Parcelle {
+    id: number;
+    num: string;
+    producteur?: Producteur | null;
+}
+
+interface CodeTracaRelation {
+    id: number;
+    code: string;
+    parcelle?: Parcelle | null;
+}
+
 interface TriageRecord {
-    id: number; code_traca_id: string; type_carton: '2kg' | '5.5kg';
-    type_certification_id: number | null; debut: string; fin: string;
-    tapis: number[]; nombre: number | null; qualite: number;
+    id: number; 
+    code_traca_id: number; // Changé en number si c'est une clé étrangère ID
+    type_carton: '2kg' | '5.5kg';
+    type_certification_id: number | null; 
+    debut: string; 
+    fin: string;
+    tapis: number[]; 
+    nombre: number | null; 
+    qualite: number;
     certification: TypeCertification | null;
+    code_traca?: CodeTracaRelation | null; // <-- Ajout de la relation
 }
 
 const props = defineProps<{
@@ -25,7 +51,7 @@ const props = defineProps<{
 }>();
 
 const breadcrumbItems: BreadcrumbItem[] = [];
-const agentName   = ref('');
+const enqueteurId = ref<number | null>(null);
 const ficheNumber = ref('');
 
 const makeForm = () => ({
@@ -49,7 +75,8 @@ const submitForm = () => {
     if (!form.code_traca_id) { formError.value = 'Le code de traçabilité est requis.'; return; }
     formSaving.value = true; formError.value = null; formSuccess.value = false;
     router.post(route('triage.store'), {
-        agent_name: agentName.value, fiche_number: ficheNumber.value,
+        enqueteur_id: enqueteurId.value, // <-- Remplacé ici
+        fiche_number: ficheNumber.value,
         ...form, tapis: JSON.stringify(form.tapis),
     }, {
         preserveScroll: true,
@@ -119,19 +146,24 @@ const qrForm = reactive({
 
 const openQr = (row: TriageRecord) => {
     qrTarget.value       = row;
-    qrForm.producteur    = '';
     qrForm.date_recolte  = row.debut?.slice(0, 10) ?? '';
     
-    // 1. Trouver l'objet code correspondant à l'ID de la ligne
-    const codeObjet = props.souragesCodes.find(s => s.id === row.code_traca_id);
-    // 2. Récupérer la chaîne de caractères (ex: "12ABC") ou mettre une valeur vide par défaut
-    const codeTexte = codeObjet ? codeObjet.code : '';
+    // 1. Récupérer le code de traçabilité directement lié à la ligne
+    const codeTexte = row.code_traca ? row.code_traca.code : '';
 
-    // 3. Assigner le numéro de lot (le code complet)
+    // 2. Assigner le numéro de lot et la parcelle
     qrForm.num_lot       = codeTexte;
-    
-    // 4. Assigner la parcelle (les 2 premiers caractères du code)
     qrForm.num_parcelle  = codeTexte ? codeTexte.slice(0, 2) : '';
+    
+    // 3. Récupérer le producteur depuis les relations chargées
+    const prod = row.code_traca?.parcelle?.producteur;
+    console.log(row.code_traca);
+    if (prod) {
+        // Concatène le Prénom et le Nom (ex: "Jean RAKOTO")
+        qrForm.producteur = `${prod.prenom} ${prod.nom}`.trim();
+    } else {
+        qrForm.producteur = '';
+    }
     
     showQrModal.value    = true;
 };
@@ -229,16 +261,28 @@ const getCodeLibelle = (id) => {
                     </h2>
                 </div>
                 <div class="p-6 space-y-5">
+                    <!-- Insertion du bloc Enquêteur Responsable tout en haut -->
+                    <div class="space-y-1.5">
+                        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                            Enquêteur Responsable *
+                        </label>
+                        <select v-model="enqueteurId" class="input-line w-full">
+                            <option :value="null">— choisir un enquêteur —</option>
+                            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                                {{ e.prenom }} {{ e.nom }}
+                            </option>
+                        </select>
+                    </div>
                     <div class="grid grid-cols-3 gap-4">
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Code de traçabilité *</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Code de traçabilité *</label>
                             <select v-model="form.code_traca_id" class="input-line w-full">
                                 <option value="" disabled>Sélectionner un code...</option>
                                 <option v-for="s in props.souragesCodes" :key="s.id" :value="s.id">{{ s.code }}</option>
                             </select>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Type de carton</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Type de carton</label>
                             <div class="flex gap-2">
                                 <button v-for="p in ['2kg', '5.5kg']" :key="p" type="button"
                                     @click="form.type_carton = p as '2kg' | '5.5kg'"
@@ -249,7 +293,7 @@ const getCodeLibelle = (id) => {
                             </div>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Type de certification</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Type de certification</label>
                             <select v-model="form.type_certification_id" class="input-line w-full">
                                 <option :value="null" disabled>{{ props.certifications.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}</option>
                                 <option v-for="c in props.certifications" :key="c.id" :value="c.id">{{ c.nom }}</option>
@@ -258,19 +302,19 @@ const getCodeLibelle = (id) => {
                     </div>
                     <div class="grid grid-cols-4 gap-4">
                         <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Début de triage</label>
-                            <input v-model="form.debut" type="datetime-local" class="input-line w-full text-[12px] font-bold"/>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Début de triage</label>
+                            <input v-model="form.debut" type="datetime-local" class="input-line w-full text-[12px] font-bold" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                         </div>
                         <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Fin de triage</label>
-                            <input v-model="form.fin" type="datetime-local" class="input-line w-full text-[12px] font-bold"/>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Fin de triage</label>
+                            <input v-model="form.fin" type="datetime-local" class="input-line w-full text-[12px] font-bold" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Nombre de cartons</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Nombre de cartons</label>
                             <input v-model="form.nombre" type="number" class="input-line w-full" placeholder="—"/>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Qualité de soufrage</label>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Qualité de soufrage</label>
                             <div class="flex gap-2">
                                 <button v-for="q in [1, 2, 3]" :key="q" type="button"
                                     @click="form.qualite = q"
@@ -282,12 +326,13 @@ const getCodeLibelle = (id) => {
                         </div>
                     </div>
                     <div class="space-y-2">
-                        <label class="text-[11px] font-black uppercase tracking-wider opacity-60">
+                        <label class="block mb-2 text-[12px] font-black uppercase tracking-wider">
                             N° du tapis utilisé
-                            <span v-if="form.tapis.length > 0" class="ml-2 px-2 py-0.5 rounded-full bg-[var(--brand-green)]/10 text-[var(--brand-green)] text-[10px] font-black normal-case">
+                            <span v-if="form.tapis.length > 0" class="ml-2 px-2 py-0.5 rounded-full bg-[var(--brand-orange)]/10 text-[var(--brand-orange)] text-[11px] font-black normal-case">
                                 {{ form.tapis.slice().sort((a,b)=>a-b).map(n=>'T'+n).join(', ') }}
                             </span>
                         </label>
+
                         <div class="flex flex-wrap gap-2">
                             <button v-for="n in 14" :key="n" type="button" @click="toggleTapis(n)"
                                 :class="form.tapis.includes(n) ? 'bg-[var(--brand-green)] text-white border-[var(--brand-green)] shadow shadow-[var(--brand-green)]/30' : 'border-[var(--sidebar-border)] hover:border-[var(--brand-green)]/60 text-[var(--text)]'"
@@ -301,7 +346,7 @@ const getCodeLibelle = (id) => {
                         <p v-else-if="formSuccess" class="text-[12px] font-bold text-emerald-500 flex items-center gap-1">
                             <CheckCircle2 class="w-4 h-4" /> Ligne enregistrée
                         </p>
-                        <span v-else class="text-[11px] opacity-40 uppercase tracking-widest font-bold">Prêt à enregistrer</span>
+                        <span v-else class="text-[12px] uppercase tracking-widest font-bold">Prêt à enregistrer</span>
                         <div class="flex gap-3">
                             <button @click="resetForm" type="button"
                                 class="h-10 px-5 border border-[var(--sidebar-border)] rounded-xl text-[12px] font-black uppercase tracking-widest hover:bg-[var(--sidebar-border)]/20 transition-all">
@@ -443,11 +488,11 @@ const getCodeLibelle = (id) => {
                                                     </div>
                                                     <div class="space-y-1" @click="$event.currentTarget.querySelector('input').showPicker()">
                                                         <label class="text-[10px] font-black uppercase opacity-50">Début</label>
-                                                        <input v-model="editForm.debut" type="datetime-local" class="input-line w-full text-[11px]" />
+                                                        <input v-model="editForm.debut" type="datetime-local" class="input-line w-full text-[11px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                                     </div>
                                                     <div class="space-y-1" @click="$event.currentTarget.querySelector('input').showPicker()">
                                                         <label class="text-[10px] font-black uppercase opacity-50">Fin</label>
-                                                        <input v-model="editForm.fin" type="datetime-local" class="input-line w-full text-[11px]" />
+                                                        <input v-model="editForm.fin" type="datetime-local" class="input-line w-full text-[11px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                                     </div>
                                                     <div class="space-y-1">
                                                         <label class="text-[10px] font-black uppercase opacity-50">Nombre de cartons</label>
