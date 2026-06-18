@@ -7,8 +7,8 @@ const agentName = defineModel('agentName');
 </script>
 
 <template>
-  <div class="grid grid-cols-5 gap-4 mb-6 text-[var(--foreground)]">
-    <div class="col-span-2 bg-[var(--card)] rounded-xl shadow p-5 font-bold flex items-center uppercase">
+  <div class="w-full md:w-1/2 text-[var(--brand-orange)]">
+    <div class="bg-[var(--card)] rounded-xl shadow p-5 font-bold flex items-center uppercase text-base md:text-lg lg:text-xl xl:text-2xl transition-all">
       {{ title }}
     </div>
 

@@ -43,12 +43,34 @@ interface TriageRecord {
     code_traca?: CodeTracaRelation | null; // <-- Ajout de la relation
 }
 
+interface PaginationLink {
+    url: string | null;
+    label: string;
+    active: boolean;
+}
+
+interface PaginatedTriages {
+    data: TriageRecord[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+    links: PaginationLink[];
+}
+
 const props = defineProps<{
     certifications: TypeCertification[];
-    triages: TriageRecord[];
+    triages: PaginatedTriages;
     souragesCodes: { id: number; code: string }[];
     enqueteurs: { id: number; nom: string; prenom: string; poste: string }[];
 }>();
+
+const goToPage = (url: string | null) => {
+    if (!url) return;
+    router.get(url, {}, { preserveScroll: true, preserveState: true, replace: true });
+};
 
 const breadcrumbItems: BreadcrumbItem[] = [];
 const enqueteurId = ref<number | null>(null);
@@ -209,8 +231,15 @@ const downloadQr = () => {
 // ── Helpers ───────────────────────────────────────────
 const fmtDate = (d: string | null) => {
     if (!d) return '—';
-    return new Date(d).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return new Date(d).toLocaleString('fr-FR', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
 };
+
 const certifAbbr = (nom: string) => nom.slice(0, 2).toUpperCase();
 
 const getCodeLibelle = (id) => {
@@ -232,20 +261,19 @@ const getCodeLibelle = (id) => {
         <div class="p-6 space-y-6 bg-[var(--background)] text-[var(--text)] font-sans">
 
             <HeaderFiche
-                title="Registre de Soufrage"
-                v-model:agentName="agentName"
+                title="Triage"
                 :enqueteurs="props.enqueteurs"
             />
 
             <!-- ── Légende certifications ── -->
             <div class="flex justify-between items-center text-sm font-medium">
                 <div class="flex flex-wrap gap-3">
-                    <div v-for="cert in props.certifications" :key="cert.id" class="flex items-center gap-2">
-                        <span class="text-[10px] font-black bg-[var(--card)] px-2 py-0.5 rounded-lg border border-[var(--sidebar-border)] uppercase tracking-wider">
-                            {{ certifAbbr(cert.nom) }}
-                        </span>
-                        <span class="text-[12px] tracking-wide font-bold">{{ cert.nom }}</span>
-                    </div>
+                    <div class="flex gap-4 text-xs font-bold">
+                <div v-for="cert in certifications" :key="cert.id" class="flex items-center gap-2 bg-[var(--card-alt)] px-3 py-1.5 rounded-lg border border-[var(--sidebar-border)]">
+                    <span class="bg-[var(--brand-green)] text-white px-1.5 py-0.5 rounded text-[10px]">{{ cert.nom[0] }}</span>
+                    <span>{{ cert.nom }}</span>
+                </div>
+            </div>
                     <span v-if="props.certifications.length === 0" class="text-[11px] italic opacity-40">Aucune certification enregistrée</span>
                 </div>
                 <div class="italic text-[12px] opacity-60">
@@ -373,7 +401,7 @@ const getCodeLibelle = (id) => {
                         <ChevronDown class="w-4 h-4 text-[var(--brand-green)]" />
                         Lignes enregistrées
                         <span class="px-2 py-0.5 rounded-full bg-[var(--brand-green)]/10 text-[var(--brand-green)] text-[11px]">
-                            {{ props.triages.length }}
+                            {{ props.triages.total }}
                         </span>
                     </h2>
                 </div>
@@ -395,13 +423,13 @@ const getCodeLibelle = (id) => {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-[var(--sidebar-border)]">
-                                <tr v-if="props.triages.length === 0">
+                                <tr v-if="props.triages.data.length === 0">
                                     <td colspan="9" class="py-12 text-center text-[12px] font-bold opacity-30 uppercase tracking-widest">
                                         Aucune ligne enregistrée
                                     </td>
                                 </tr>
 
-                                <template v-for="row in props.triages" :key="row.id">
+                                <template v-for="row in props.triages.data" :key="row.id">
                                     <!-- Ligne normale -->
                                     <tr v-if="editingId !== row.id" class="hover:bg-[var(--brand-green)]/5 transition-colors text-[12px]">
                                         <td class="px-3 py-3 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">{{ getCodeLibelle(row.code_traca_id) || '—' }}</td>
@@ -534,6 +562,31 @@ const getCodeLibelle = (id) => {
                                 </template>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                <!-- ── Pagination ── -->
+                <div v-if="props.triages.last_page > 1" class="flex items-center justify-between px-2">
+                    <p class="text-[11px] font-bold opacity-50 uppercase tracking-widest">
+                        Affichage {{ props.triages.from }}–{{ props.triages.to }} sur {{ props.triages.total }}
+                    </p>
+                    <div class="flex items-center gap-1">
+                        <template v-for="(link, idx) in props.triages.links" :key="idx">
+                            <button
+                                type="button"
+                                @click="goToPage(link.url)"
+                                :disabled="!link.url"
+                                v-html="link.label"
+                                :class="[
+                                    'min-w-[34px] h-9 px-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all',
+                                    link.active
+                                        ? 'bg-[var(--brand-green)] text-white shadow shadow-[var(--brand-green)]/30'
+                                        : link.url
+                                            ? 'border border-[var(--sidebar-border)] hover:bg-[var(--brand-green)]/10'
+                                            : 'opacity-30 cursor-not-allowed border border-[var(--sidebar-border)]/40'
+                                ]"
+                            />
+                        </template>
                     </div>
                 </div>
             </div>

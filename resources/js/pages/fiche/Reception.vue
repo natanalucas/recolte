@@ -227,12 +227,16 @@ const executeDelete = () => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const fmtDate = (d: string | null) =>
-    d ? new Date(d).toLocaleString('fr-FR', {
-            day: '2-digit', month: '2-digit',
-            hour: '2-digit', minute: '2-digit',
-        })
-      : '—';
+const fmtDate = (d: string | null) => {
+    if (!d) return '—';
+    return new Date(d).toLocaleString('fr-FR', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+};
 
 const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
     ligne.parcelle?.num
@@ -247,7 +251,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
         <div class="p-6 space-y-5 bg-[var(--background)] text-[var(--text)] font-sans">
 
             <HeaderFiche 
-                title="Fiche de Traçabilité de l'Expédition" 
+                title="Réception" 
                 v-model:enqueteurId="enqueteurId" 
                 :enqueteurs="props.enqueteurs"
             />
@@ -312,13 +316,14 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                             <tr class="bg-[var(--brand-green)]/80 text-white
                                        text-[10px] font-black uppercase tracking-wider">
                                 <th class="px-3 py-3 text-center border-r border-white/10">N° Parcelle</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Caissettes</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Qtté Caissette livré</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10 bg-[var(--brand-green)]/60">Quantité (kg)</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Voiture</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Commune</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">N° Voiture</th>
+                                <th class="px-3 py-3 text-route border-r border-white/10">Commune et district</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Collecte</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Départ champ</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Retour station</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Retour à la station</th>
+                                
                                 <th class="px-3 py-3 text-center">Actions</th>
                             </tr>
                         </thead>

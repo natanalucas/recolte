@@ -308,7 +308,7 @@ const executeDelete = () => {
         <div class="p-6 space-y-6 bg-[var(--background)] text-[var(--text)] font-sans">
 
             <HeaderFiche
-                title="Registre de Soufrage"
+                title="Soufrage"
                 v-model:agentName="ficheNumber" 
                 :enqueteurs="props.enqueteurs"
             />

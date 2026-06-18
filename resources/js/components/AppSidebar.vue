@@ -61,12 +61,12 @@ const mainNavItems: NavItem[] = [
             },
             {
                 title: 'Paletisation',
-                href: '/fiche-paletisation',
+                href: '/palettisation',
                 icon: Layers, // Icône de vent/gaz pour le soufrage
             },
             {
                 title: 'Expédition',
-                href: '/fiche-expedition',
+                href: '/expeditions',
                 icon: Package, // Icône de vent/gaz pour le soufrage
             },
         ],

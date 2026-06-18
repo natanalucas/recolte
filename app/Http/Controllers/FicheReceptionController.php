@@ -8,9 +8,14 @@ use App\Models\FicheReception;
 use Inertia\Inertia;
 use App\Models\Setting;
 use App\Models\Enqueteur;
+use App\Services\Pdf\FicheReceptionPdfService;
 
 class FicheReceptionController extends Controller
 {
+    public function __construct(
+        private FicheReceptionPdfService $ficheReceptionPdfService
+    ) {}
+
     public function index()
     {
     return Inertia::render('fiche/Reception', [
@@ -104,5 +109,9 @@ class FicheReceptionController extends Controller
         $reception->lignes()->delete();
         $reception->delete();
         return back()->with('success', 'Fiche supprimée.');
+    }
+    public function exportPdf(FicheReception $ficheReception)
+    {
+        return $this->ficheReceptionPdfService->download($ficheReception);
     }
 }

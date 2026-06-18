@@ -27,7 +27,7 @@ class TriageController extends Controller
             'triages' => Triage::with([
                 'certification', 
                 'codeTraca.parcelle.producteur' // <-- Charge l'arbre de relations complet
-            ])->latest()->get(),
+            ])->latest()->paginate(20)->withQueryString(),
             'souragesCodes'  => CodeTraca::select('id', 'code')->whereNotNull('code')->distinct()->get(),
         ]);
     }

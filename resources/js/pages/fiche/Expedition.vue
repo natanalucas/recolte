@@ -1,273 +1,531 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
-import { ref, reactive } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
+import { Head, useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/layouts/AppLayout.vue';
-import type { BreadcrumbItem } from '@/types';
 import HeaderFiche from './HeaderFiche.vue';
+import { Pencil, Trash2 } from 'lucide-vue-next'; // Ajout des icônes pour les boutons d'action
 
-const breadcrumbs: BreadcrumbItem[] = [];
+// Si 'route' n'est pas disponible globalement dans votre configuration Ziggy, 
+// vous pouvez décommenter la ligne suivante :
+// import { route } from 'ziggy-js';
 
-// État réactif pour l'en-tête
-const agentName = ref('');
-const ficheNumber = ref('');
+// Props reçues depuis le contrôleur Laravel
+const props = defineProps<{
+    expeditions: any[];
+    availablePalettes: any[];
+    certifications: any[];
+    enqueteurs: { id: number; nom: string; prenom: string; poste: string }[];
+}>();
 
-// Données des 24 lignes de palettes
-const palettes = reactive(Array.from({ length: 24 }, (_, i) => ({
-    id: i + 1,
-    numero: '',
-    type: '5 kg',
-    certif: 'G'
-})));
+const isModalOpen = ref(false);
+const isEditing = ref(false);
+const currentId = ref<number | null>(null);
 
-// Infos transport mis à jour avec tous les nouveaux champs
-const transport = reactive({
+// ---------------------------------------------------------------------------
+// Pagination (côté client — la liste complète des fiches est déjà chargée via Inertia)
+// ---------------------------------------------------------------------------
+const pageSize = ref(10);
+const currentPage = ref(1);
+
+const pageCount = computed(() => Math.max(1, Math.ceil(props.expeditions.length / pageSize.value)));
+
+// Si la liste change (ajout/suppression) et qu'on se retrouve sur une page
+// qui n'existe plus, on revient à la dernière page disponible.
+watch([() => props.expeditions.length, pageSize], () => {
+    if (currentPage.value > pageCount.value) currentPage.value = pageCount.value;
+});
+
+const paginatedExpeditions = computed(() => {
+    const start = (currentPage.value - 1) * pageSize.value;
+    return props.expeditions.slice(start, start + pageSize.value);
+});
+
+// Plage affichée dans le pied de tableau, ex. "11–20 sur 47"
+const paginationRangeLabel = computed(() => {
+    if (props.expeditions.length === 0) return '0–0 sur 0';
+    const start = (currentPage.value - 1) * pageSize.value + 1;
+    const end = Math.min(props.expeditions.length, currentPage.value * pageSize.value);
+    return `${start}–${end} sur ${props.expeditions.length}`;
+});
+
+function goToPage(page: number) {
+    currentPage.value = Math.min(Math.max(1, page), pageCount.value);
+}
+
+function goToPreviousPage() {
+    goToPage(currentPage.value - 1);
+}
+
+function goToNextPage() {
+    goToPage(currentPage.value + 1);
+}
+
+// Liste compacte de numéros de page à afficher (avec "…" pour les trous).
+const paginationItems = computed<(number | '…')[]>(() => {
+    const total = pageCount.value;
+    const current = currentPage.value;
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+
+    const items: (number | '…')[] = [1];
+    if (current > 3) items.push('…');
+
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+    for (let p = start; p <= end; p++) items.push(p);
+
+    if (current < total - 2) items.push('…');
+    items.push(total);
+
+    return items;
+});
+
+// Formulaire réactif via Inertia
+const form = useForm({
+    enqueteur_id: '',
+    fiche_number: '',
     conteneur: '',
     immatriculation: '',
-    propreteConteneur: 'propre',
-    propreteCamion: 'propre',
-    debutEmpotage: '',
-    finEmpotage: '',
-    departStation: '',
-    arriveePort: '',
+    proprete_conteneur: 'propre',
+    proprete_camion: 'propre',
+    debut_empotage: '',
+    fin_empotage: '',
+    depart_station: '',
+    arrivee_port: '',
     bateau: '',
     bon_livraison: '',
-    observations: ''
+    observations: '',
+    palettes: [] as Array<{ id: number; paletisation_id: string | number; type: string; certif: string }>
 });
+
+// Ajouter une nouvelle ligne vide (Incrémentation automatique du N°)
+const addPaletteRow = () => {
+    const nextId = form.palettes.length + 1;
+    form.palettes.push({
+        id: nextId,
+        paletisation_id: '',
+        type: '-',
+        certif: '-'
+    });
+};
+
+// Auto-complétion automatique des colonnes dès que la palette est sélectionnée
+const handlePaletteChange = (index: number) => {
+    const selectedId = form.palettes[index].paletisation_id;
+    const item = props.availablePalettes.find(p => p.id == selectedId);
+    
+    if (item) {
+        form.palettes[index].type = item.type_carton || 'Inconnu';
+        // Récupération du nom de la certification (Globalgap, Fairtrade, etc.)
+        form.palettes[index].certif = item.certification?.nom || 'C';
+    } else {
+        form.palettes[index].type = '-';
+        form.palettes[index].certif = '-';
+    }
+};
+
+const openCreateModal = () => {
+    isEditing.value = false;
+    form.reset();
+    // Générer par défaut 1 ligne de palette pré-remplie à blanc
+    form.palettes = Array.from({ length: 1 }, (_, i) => ({
+        id: i + 1,
+        paletisation_id: '',
+        type: '-',
+        certif: '-'
+    }));
+    isModalOpen.value = true;
+};
+
+const openEditModal = (fiche: any) => {
+    isEditing.value = true;
+    currentId.value = fiche.id;
+    
+    form.enqueteur_id = fiche.enqueteur_id;
+    form.fiche_number = fiche.fiche_number;
+    form.conteneur = fiche.conteneur;
+    form.immatriculation = fiche.immatriculation;
+    form.proprete_conteneur = fiche.proprete_conteneur;
+    form.proprete_camion = fiche.proprete_camion;
+    form.debut_empotage = fiche.debut_empotage ? fiche.debut_empotage.slice(0,16) : '';
+    form.fin_empotage = fiche.fin_empotage ? fiche.fin_empotage.slice(0,16) : '';
+    form.depart_station = fiche.depart_station ? fiche.depart_station.slice(0,16) : '';
+    form.arrivee_port = fiche.arrivee_port ? fiche.arrivee_port.slice(0,16) : '';
+    form.bateau = fiche.bateau;
+    form.bon_livraison = fiche.bon_livraison;
+    form.observations = fiche.observations;
+    
+    form.palettes = fiche.palettes.map((p: any, idx: number) => ({
+        id: idx + 1,
+        paletisation_id: p.paletisation_id,
+        type: p.paletisation?.type_carton || '-',
+        certif: p.paletisation?.certification?.nom || '-'
+    }));
+
+    isModalOpen.value = true;
+};
+
+const submit = () => {
+    // Filtrer pour ne pas envoyer de lignes vides non sélectionnées
+    const cleanPalettes = form.palettes.filter(p => p.paletisation_id !== '');
+    
+    // On duplique temporairement les données pour l'envoi propre
+    const payload = { ...form.data(), palettes: cleanPalettes };
+
+    if (isEditing.value && currentId.value) {
+        // Utilisation de la route Laravel 'expeditions.update' via le helper Ziggy
+        router.put(route('expeditions.update', currentId.value), payload, {
+            onSuccess: () => closeModal()
+        });
+    } else {
+        // Utilisation de la route Laravel 'expeditions.store' via le helper Ziggy
+        router.post(route('expeditions.store'), payload, {
+            // La liste est triée par latest(), la nouvelle fiche apparaît donc
+            // en première position : on revient à la page 1 pour qu'elle soit visible.
+            onSuccess: () => { closeModal(); currentPage.value = 1; }
+        });
+    }
+};
+
+const closeModal = () => {
+    isModalOpen.value = false;
+    form.reset();
+};
+
+const confirmDelete = (fiche: any) => {
+    if(confirm('Voulez-vous vraiment supprimer cette fiche d\'expédition ?')) {
+        // Utilisation de la route Laravel 'expeditions.destroy' via le helper Ziggy
+        router.delete(route('expeditions.destroy', fiche.id));
+    }
+};
 </script>
 
 <template>
-    <Head title="Fiche de Traçabilité de l'Expédition" />
+    <Head title="Suivi des Expéditions" />
 
-    <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="p-4 md:p-6 transition-colors bg-[var(--background)] text-[var(--text)] font-sans space-y-6">
+    <AppLayout :breadcrumbs="[]">
+        <div class="p-6 space-y-4 bg-[var(--background)] text-[var(--text)] min-h-screen">
             
-            <HeaderFiche 
-                title="Fiche de Traçabilité de l'Expédition" 
-                v-model:agentName="agentName" 
-                v-model:ficheNumber="ficheNumber" 
-            />
+            <div class="flex justify-between items-center">
+                <div>
+                    <HeaderFiche 
+                        title="Expéditions" 
+                    />
+                </div>
+                <button @click="openCreateModal" class="bg-[var(--brand-green)] text-white font-bold text-xs uppercase px-4 py-2.5 rounded-xl shadow hover:bg-[var(--brand-green)]/90 transition-all">
+                    + Nouvelle Fiche
+                </button>
+            </div>
 
-            <div class="flex justify-between items-center py-2 mt-2 text-sm font-medium">
-                <div class="flex gap-8">
-                    <div class="flex items-center gap-2">
-                        <span class="text-[12px] font-bold bg-[var(--card-alt)] px-1.5 py-0.5 rounded border border-[var(--sidebar-border)]">G</span>
-                        <span class="tracking-wide text-xs">Globalgap</span>
+            <div class="flex gap-4 text-xs font-bold">
+                <div v-for="cert in certifications" :key="cert.id" class="flex items-center gap-2 bg-[var(--card-alt)] px-3 py-1.5 rounded-lg border border-[var(--sidebar-border)]">
+                    <span class="bg-[var(--brand-green)] text-white px-1.5 py-0.5 rounded text-[10px]">{{ cert.nom[0] }}</span>
+                    <span>{{ cert.nom }}</span>
+                </div>
+            </div>
+
+            <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-[var(--brand-green)] text-white text-[12px] font-black uppercase">
+                            <th class="p-4">Immatriculation Camion</th>
+                            <th class="p-4">Numéro Conteneur</th>
+                            <th class="p-4">Palettes Chargées</th>
+                            <th class="p-4 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[var(--sidebar-border)] text-[12px]">
+                        <tr v-for="fiche in paginatedExpeditions" :key="fiche.id" class="hover:bg-[var(--brand-green)]/5 transition-colors">
+                            <td class="p-4 font-medium">{{ fiche.immatriculation || '-' }}</td>
+                            <td class="p-4 font-medium">{{ fiche.conteneur || '-' }}</td>
+                            <td class="p-4">
+                                <span class="bg-[var(--brand-green)] px-2 py-1 rounded text-[12px] font-bold">
+                                    {{ fiche.palettes?.length || 0 }} palette(s)
+                                </span>
+                            </td>
+                            <td class="p-4 text-center">
+                                <div class="flex items-center justify-center gap-1.5">
+                                    <button @click="openEditModal(fiche)"
+                                        class="inline-flex items-center gap-1 px-3 py-1 rounded-lg
+                                               border border-[var(--sidebar-border)] text-[10px] font-black uppercase
+                                               hover:border-[var(--brand-green)] hover:text-[var(--brand-green)] transition-all">
+                                        <Pencil class="w-3 h-3" /> Modifier
+                                    </button>
+                                    <button @click="confirmDelete(fiche)"
+                                        class="p-1.5 rounded-lg border border-[var(--sidebar-border)]
+                                               hover:border-red-500 hover:text-red-500 transition-all">
+                                        <Trash2 class="w-3 h-3" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr v-if="expeditions.length === 0">
+                            <td colspan="5" class="p-8 text-center text-sm text-slate-400 italic">Aucune fiche enregistrée.</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <!-- Pagination -->
+                <div
+                    v-if="expeditions.length > 0"
+                    class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-[var(--sidebar-border)] bg-[var(--card-alt)]"
+                >
+                    <div class="flex items-center gap-2 text-[11px] font-bold text-[var(--text)]/60">
+                        <span>{{ paginationRangeLabel }}</span>
+                        <span class="text-[var(--sidebar-border)]">|</span>
+                        <label class="flex items-center gap-1.5">
+                            <span>Lignes par page</span>
+                            <select
+                                v-model.number="pageSize"
+                                class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-md px-1.5 py-1 text-[11px] font-bold outline-none focus:border-[var(--brand-green)]"
+                            >
+                                <option :value="10">10</option>
+                                <option :value="25">25</option>
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                            </select>
+                        </label>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-[12px] font-bold bg-[var(--card-alt)] px-1.5 py-0.5 rounded border border-[var(--sidebar-border)]">F</span>
-                        <span class="tracking-wide text-xs">Fairtrade</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-[12px] font-bold bg-[var(--card-alt)] px-1.5 py-0.5 rounded border border-[var(--sidebar-border)]">C</span>
-                        <span class="tracking-wide text-xs">Conventionnelle</span>
+
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="goToPreviousPage"
+                            :disabled="currentPage === 1"
+                            class="h-8 px-2.5 rounded-lg text-[11px] font-black uppercase border border-[var(--sidebar-border)] hover:bg-[var(--card)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Préc.
+                        </button>
+
+                        <template v-for="(item, idx) in paginationItems" :key="idx">
+                            <span v-if="item === '…'" class="px-1.5 text-[11px] text-[var(--text)]/40">…</span>
+                            <button
+                                v-else
+                                @click="goToPage(item)"
+                                class="h-8 min-w-8 px-2 rounded-lg text-[11px] font-black transition-colors"
+                                :class="item === currentPage
+                                    ? 'bg-[var(--brand-green)] text-white'
+                                    : 'border border-[var(--sidebar-border)] hover:bg-[var(--card)]'"
+                            >
+                                {{ item }}
+                            </button>
+                        </template>
+
+                        <button
+                            @click="goToNextPage"
+                            :disabled="currentPage === pageCount"
+                            class="h-8 px-2.5 rounded-lg text-[11px] font-black uppercase border border-[var(--sidebar-border)] hover:bg-[var(--card)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Suiv.
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <div class="flex flex-col md:flex-row gap-4 items-start">
-                
-                <div class="w-full md:w-[50%] xl:w-[35%] overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
-                    <table class="w-full text-left border-collapse table-fixed">
-                        <thead>
-                            <tr class="bg-[var(--brand-green)] text-white text-[12px] font-black uppercase">
-                                <th class="px-2 py-3 border-r border-white/10 w-10 text-center">N°</th>
-                                <th class="px-3 py-3 border-r border-white/10 text-center w-32">N° Palette</th>
-                                <th class="px-2 py-3 border-r border-white/10 text-center w-20">Type de Carton</th>
-                                <th class="px-2 py-3 text-center w-16">G/F/C</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-[var(--sidebar-border)]">
-                            <tr v-for="p in palettes" :key="p.id" class="hover:bg-[var(--brand-green)]/5 transition-colors">
-                                <td class="px-2 py-1.5 border-r border-[var(--sidebar-border)] text-center text-[12px] font-bold bg-[var(--card-alt)] text-slate-400 italic">
-                                    {{ p.id }}
-                                </td>
-                                <td class="px-3 py-1.5 border-r border-[var(--sidebar-border)]">
-                                    <input v-model="p.numero" type="text" maxlength="6" placeholder="0000" class="w-full bg-transparent outline-none text-[12px] font-mono font-bold text-center focus:text-[var(--brand-green)]">
-                                </td>
-                                <td class="px-1 py-1.5 border-r border-[var(--sidebar-border)]">
-                                    <select v-model="p.type" class="w-full bg-transparent outline-none text-[12px] font-medium cursor-pointer text-center">
-                                        <option value="5 kg">5kg</option>
-                                        <option value="2.5 kg">2.5kg</option>
-                                    </select>
-                                </td>
-                                <td class="px-2 py-1.5 text-center">
-                                    <select v-model="p.certif" class="bg-transparent text-[12px] font-black text-center outline-none cursor-pointer uppercase w-full">
-                                        <option>G</option>
-                                        <option>F</option>
-                                        <option>C</option>
-                                    </select>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="w-full md:w-[50%] xl:w-[65%] space-y-6">
+            <div v-if="isModalOpen" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div class="bg-[var(--background)] border border-[var(--sidebar-border)] rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto shadow-2xl space-y-6 p-6">
                     
-                    <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-[var(--brand-green)] text-white text-[12px] font-black uppercase">
-                                    <th class="px-4 py-3 border-r border-white/10 w-1/2">Numéro Conteneur</th>
-                                    <th class="px-4 py-3 w-1/2">N° Immatriculation du Camion</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="p-3 border-r border-[var(--sidebar-border)]">
-                                        <input v-model="transport.conteneur" type="text" class="w-full bg-transparent outline-none text-sm font-bold uppercase placeholder:opacity-30" placeholder="....">
-                                    </td>
-                                    <td class="p-3">
-                                        <input v-model="transport.immatriculation" type="text" class="w-full bg-transparent outline-none text-sm font-bold uppercase placeholder:opacity-30" placeholder="....">
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <br/>
-                    <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
-                        <div class="bg-[var(--brand-green)] px-4 py-2 border-b border-[var(--brand-green)] flex items-center text-white">
-                            <span class="text-[12px] font-black uppercase">Vérification :</span>
-                        </div>
-                        <table class="w-full text-left border-collapse">
-                            <tbody class="divide-y divide-[var(--sidebar-border)] text-[12px]">
-                                <tr v-for="item in [{l:'du Conteneur', k:'propreteConteneur'}, {l:'du Camion', k:'propreteCamion'}]" :key="item.k">
-                                    <td class="px-4 py-4 font-bold text-[12px] uppercase w-1/3 border-r border-[var(--sidebar-border)] bg-[var(--card-alt)]">Propreté {{ item.l }}</td>
-                                    <td class="px-4 py-4">
-                                        <div class="flex gap-8">
-                                            <label class="flex items-center gap-2 cursor-pointer group">
-                                                <input type="radio" v-model="transport[item.k as keyof typeof transport]" value="propre" class="accent-[var(--brand-green)] w-4 h-4">
-                                                <span class="font-bold group-hover:text-[var(--brand-green)]">PROPRE</span>
-                                            </label>
-                                            <label class="flex items-center gap-2 cursor-pointer group">
-                                                <input type="radio" v-model="transport[item.k as keyof typeof transport]" value="sale" class="accent-red-500 w-4 h-4">
-                                                <span class="font-bold">SALE</span>
-                                            </label>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <br/>
-                    <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
-                        <table class="w-full border-collapse table-fixed">
-                            <tbody>
-                                <tr>
-                                    <td class="w-1/3 bg-[var(--brand-green)] text-white p-0 m-0 border-r border-white/20">
-                                        <div class="flex items-center justify-center text-center font-black uppercase text-[12px] px-4 py-10 h-full leading-tight">
-                                            Chargement ou <br> Empotage
-                                        </div>
-                                    </td>
-                                    <td class="w-2/3 p-0 m-0 align-top text-white">
-                                        <div class="flex flex-col sm:flex-row h-full">
-                                            <div class="flex-1 border-r border-[var(--sidebar-border)] flex flex-col">
-                                                <div class="bg-[var(--brand-green)] border-b border-white/10 px-4 py-3 text-center text-[12px] font-black uppercase">
-                                                    Début
-                                                </div>
-                                                <div class="p-4 flex-grow flex items-center bg-[var(--card)]" @click="$event.currentTarget.querySelector('input').showPicker()">
-                                                    <input 
-                                                        v-model="transport.debutEmpotage" 
-                                                        type="datetime-local" 
-                                                        class="w-full bg-transparent outline-none text-[12px] font-bold text-center focus:text-[var(--brand-green)] text-black dark:text-white"
-                                                        @input="(e) => (e.target as HTMLInputElement).blur()"
-                                                    >
-                                                </div>
-                                            </div>
-                                            <div class="flex-1 flex flex-col">
-                                                <div class="bg-[var(--brand-green)] border-b border-white/10 px-4 py-3 text-center text-[12px] font-black uppercase">Fin</div>
-                                                <div class="p-4 flex-grow flex items-center bg-[var(--card)]" @click="$event.currentTarget.querySelector('input').showPicker()">
-                                                    <input v-model="transport.finEmpotage" type="datetime-local" class="w-full bg-transparent outline-none text-[12px] font-bold text-center focus:text-[var(--brand-green)] text-black dark:text-white"
-                                                    @input="(e) => (e.target as HTMLInputElement).blur()">
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <br/>
-                    <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
-                        <table class="w-full border-collapse table-fixed">
-                            <tbody>
-                                <tr>
-                                    <td class="w-1/3 bg-[var(--brand-green)] text-white p-0 m-0 border-r border-white/20">
-                                        <div class="flex items-center justify-center text-center font-black uppercase text-[11px] px-4 py-10 h-full leading-tight">
-                                            Départ à la station <br> & Arrivé au port
-                                        </div>
-                                    </td>
-                                    <td class="w-2/3 p-0 m-0 align-top text-white"> 
-                                        <div class="flex flex-col sm:flex-row h-full">
-                                            <div class="flex-1 border-r border-[var(--sidebar-border)] flex flex-col">
-                                                <div class="bg-[var(--brand-green)] border-b border-white/10 px-4 py-3 text-center text-[11px] font-black uppercase">Départ à la station</div>
-                                                <div class="p-4 flex-grow flex items-center bg-[var(--card)] cursor-pointer hover:bg-slate-50 transition-colors" @click="$event.currentTarget.querySelector('input').showPicker()"
-                                                    >
-                                                    <input v-model="transport.departStation" type="datetime-local" class="w-full bg-transparent outline-none text-[12px] font-bold text-center focus:text-[var(--brand-green)] text-black dark:text-white"
-                                                    @input="(e) => (e.target as HTMLInputElement).blur()">
-                                                </div>
-                                            </div>
-                                            <div class="flex-1 flex flex-col">
-                                                <div class="bg-[var(--brand-green)] border-b border-white/10 px-4 py-3 text-center text-[11px] font-black uppercase">Arrivé au port</div>
-                                                <div class="p-4 flex-grow flex items-center bg-[var(--card)] cursor-pointer hover:bg-slate-50 transition-colors" @click="$event.currentTarget.querySelector('input').showPicker()">
-                                                    <input v-model="transport.arriveePort" type="datetime-local" class="w-full bg-transparent outline-none text-[12px] font-bold text-center focus:text-[var(--brand-green)] text-black dark:text-white"
-                                                    @input="(e) => (e.target as HTMLInputElement).blur()">
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <br/>
-                    <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-[var(--brand-green)] text-white text-[12px] font-black uppercase">
-                                    <th class="px-4 py-3 border-r border-white/10 w-1/2">Nom du bâteau / Transport</th>
-                                    <th class="px-4 py-3 w-1/2">Bon de livraison (B.L)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="p-3 border-r border-[var(--sidebar-border)]">
-                                        <input v-model="transport.bateau" type="text" class="w-full bg-transparent outline-none text-sm font-bold uppercase placeholder:opacity-30" placeholder="....">
-                                    </td>
-                                    <td class="p-3">
-                                        <input v-model="transport.bon_livraison" type="text" class="w-full bg-transparent outline-none text-sm font-bold uppercase placeholder:opacity-30" placeholder="....">
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <br/>
-                    <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
-                        <div class="bg-[var(--brand-green)] px-4 py-2 border-b border-[var(--brand-green)] flex items-center text-white">
-                            <span class="text-[12px] font-black uppercase tracking-wider">Observations</span>
-                        </div>
-                        <div class="p-0">
-                            <textarea v-model="transport.observations" rows="4" placeholder="Notes complémentaires..." class="w-full p-4 bg-transparent outline-none text-[12px] font-medium placeholder:opacity-40 placeholder:italic resize-none focus:ring-1 focus:ring-[var(--brand-green)]/20 transition-all"></textarea>
-                        </div>
+                    <div class="flex justify-between items-center border-b border-[var(--sidebar-border)] pb-3">
+                        <h2 class="text-lg font-black uppercase text-[var(--brand-green)]">
+                            {{ isEditing ? 'Modifier la Fiche' : 'Nouvelle Fiche de Traçabilité' }}
+                        </h2>
+                        <button @click="closeModal" class="text-slate-400 hover:text-[var(--brand-green)] text-xl font-bold">&times;</button>
                     </div>
 
+                    <form @submit.prevent="submit" class="space-y-6">
+
+                        <div class="flex flex-col lg:flex-row gap-6 items-start">
+                            
+                            <div class="w-full lg:w-[45%] space-y-3">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[12px] font-bold uppercase tracking-wider">Détail des Palettes</span>
+                                    <button type="button" @click="addPaletteRow" class="text-[12px] bg-[var(--brand-green)] text-white font-bold px-3 py-1.5 rounded-lg hover:bg-opacity-90 transition-colors shadow">
+                                        + Ajouter une ligne
+                                    </button>
+                                </div>
+
+                                <div class="px-6 py-5 space-y-5">
+                                    <div class="space-y-1.5">
+                                        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                                            Enquêteur Responsable *
+                                        </label>
+                                        <select v-model="form.enqueteur_id" class="input-line w-full">
+                                            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                                                {{ e.prenom }} {{ e.nom }}
+                                            </option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm max-h-[500px] overflow-y-auto">
+                                    <table class="w-full text-left border-collapse table-fixed">
+                                        <thead class="sticky top-0 bg-[var(--brand-green)] text-white text-[12px] font-black uppercase z-10">
+                                            <tr>
+                                                <th class="px-2 py-3 w-12 text-center">N°</th>
+                                                <th class="px-3 py-3 text-center w-40">N° Palette</th>
+                                                <th class="px-2 py-3 text-center w-24">Type Carton</th>
+                                                <th class="px-2 py-3 text-center w-16">G/F/C</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-[var(--sidebar-border)]">
+                                            <tr v-for="(p, index) in form.palettes" :key="p.id" class="hover:bg-[var(--brand-green)]/5">
+                                                <td class="px-2 py-2 text-center text-[12px] font-bold bg-[var(--card-alt)] italic">
+                                                    {{ p.id }}
+                                                </td>
+                                                <td class="px-2 py-1 border-r border-[var(--sidebar-border)]">
+                                                    <select 
+                                                        v-model="p.paletisation_id" 
+                                                        @change="handlePaletteChange(index)"
+                                                        class="w-full bg-transparent outline-none text-[12px] font-mono font-bold text-center cursor-pointer focus:text-[var(--brand-green)]"
+                                                    >
+                                                        <option value="">-- Sélectionner --</option>
+                                                        <option v-for="ap in availablePalettes" :key="ap.id" :value="ap.id">
+                                                            {{ ap.num_palette }}
+                                                        </option>
+                                                    </select>
+                                                </td>
+                                                <td class="px-2 py-2 border-r border-[var(--sidebar-border)] text-center text-[12px] font-medium">
+                                                    {{ p.type }}
+                                                </td>
+                                                <td class="px-2 py-2 text-center text-[12px] font-black text-[var(--brand-green)] uppercase">
+                                                    {{ p.certif }}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="w-full lg:w-[55%] space-y-4">
+                                <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
+                                    <table class="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr class="bg-[var(--brand-green)] text-white text-[12px] font-black uppercase">
+                                                <th class="px-4 py-2.5 border-r border-white/10 w-1/2">Numéro Conteneur</th>
+                                                <th class="px-4 py-2.5 w-1/2">N° Immatriculation Camion</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td class="p-2 border-r border-[var(--sidebar-border)]">
+                                                    <input v-model="form.conteneur" type="text" class="w-full bg-transparent outline-none text-xs font-bold uppercase placeholder:opacity-30" placeholder="....">
+                                                </td>
+                                                <td class="p-2">
+                                                    <input v-model="form.immatriculation" type="text" class="w-full bg-transparent outline-none text-xs font-bold uppercase placeholder:opacity-30" placeholder="....">
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
+                                    <table class="w-full text-left border-collapse">
+                                        <tbody class="divide-y divide-[var(--sidebar-border)] text-[12px]">
+                                            <tr v-for="item in [{l:'du Conteneur', k:'proprete_conteneur'}, {l:'du Camion', k:'proprete_camion'}]" :key="item.k">
+                                                <td class="px-4 py-3 font-bold uppercase w-1/3 border-r border-[var(--sidebar-border)] bg-[var(--card-alt)]">Propreté {{ item.l }}</td>
+                                                <td class="px-4 py-3">
+                                                    <div class="flex gap-6">
+                                                        <label class="flex items-center gap-2 cursor-pointer text-xs font-bold">
+                                                            <input type="radio" v-model="form[item.k as 'proprete_conteneur' | 'proprete_camion']" value="propre" class="accent-[var(--brand-green)]"> PROPRE
+                                                        </label>
+                                                        <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-red-500">
+                                                            <input type="radio" v-model="form[item.k as 'proprete_conteneur' | 'proprete_camion']" value="sale" class="accent-red-500"> SALE
+                                                        </label>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
+                                    <table class="w-full border-collapse table-fixed">
+                                        <tbody>
+                                            <tr>
+                                                <td class="w-1/3 bg-[var(--brand-green)] text-white text-center font-black uppercase text-[12px] leading-tight">Chargement / Empotage</td>
+                                                <td class="w-2/3 p-0 text-white">
+                                                    <div class="flex">
+                                                        <div class="flex-1 border-r border-[var(--sidebar-border)]">
+                                                            <div class="bg-[var(--brand-green)] py-1.5 text-center text-[10px] font-black uppercase border-b border-white/10">Début</div>
+                                                            <input v-model="form.debut_empotage" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
+                                                        </div>
+                                                        <div class="flex-1">
+                                                            <div class="bg-[var(--brand-green)] py-1.5 text-center text-[10px] font-black uppercase border-b border-white/10">Fin</div>
+                                                            <input v-model="form.fin_empotage" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
+                                    <table class="w-full border-collapse table-fixed">
+                                        <tbody>
+                                            <tr>
+                                                <td class="w-1/3 bg-[var(--brand-green)] text-white text-center font-black uppercase text-[10px] leading-tight">Départ Station & Arrivée Port</td>
+                                                <td class="w-2/3 p-0 text-white">
+                                                    <div class="flex">
+                                                        <div class="flex-1 border-r border-[var(--sidebar-border)]">
+                                                            <div class="bg-[var(--brand-green)] py-1.5 text-center text-[10px] font-black uppercase border-b border-white/10">Départ Station</div>
+                                                            <input v-model="form.depart_station" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
+                                                        </div>
+                                                        <div class="flex-1">
+                                                            <div class="bg-[var(--brand-green)] py-1.5 text-center text-[10px] font-black uppercase border-b border-white/10">Arrivée Port</div>
+                                                            <input v-model="form.arrivee_port" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
+                                    <table class="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr class="bg-[var(--brand-green)] text-white text-[12px] font-black uppercase">
+                                                <th class="px-4 py-2 border-r border-white/10 w-1/2">Nom du bateau</th>
+                                                <th class="px-4 py-2 w-1/2">Bon de livraison (B.L)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td class="p-2 border-r border-[var(--sidebar-border)]">
+                                                    <input v-model="form.bateau" type="text" class="w-full bg-transparent outline-none text-xs font-bold uppercase placeholder:opacity-30" placeholder="....">
+                                                </td>
+                                                <td class="p-2">
+                                                    <input v-model="form.bon_livraison" type="text" class="w-full bg-transparent outline-none text-xs font-bold uppercase placeholder:opacity-30" placeholder="....">
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
+                                    <div class="bg-[var(--brand-green)] px-4 py-1.5 text-white text-[12px] font-black uppercase">Observations</div>
+                                    <textarea v-model="form.observations" rows="3" placeholder="Notes complémentaires..." class="w-full p-3 bg-transparent outline-none text-[12px] resize-none focus:ring-1 focus:ring-[var(--brand-green)]/20 transition-all"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-3 border-t border-[var(--sidebar-border)] pt-4">
+                            <button type="button" @click="closeModal" class="px-4 py-2 text-xs font-bold uppercase text-slate-400 hover:text-slate-600">Annuler</button>
+                            <button type="submit" :disabled="form.processing" class="bg-[var(--brand-green)] text-white text-xs font-bold uppercase px-5 py-2 rounded-xl shadow hover:bg-opacity-90 transition-all">
+                                {{ isEditing ? 'Enregistrer' : 'Sauvegarder la fiche' }}
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
+
         </div>
     </AppLayout>
 </template>
 
 <style scoped>
-input::-webkit-outer-spin-button,
-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+.max-h-\[500px\]::-webkit-scrollbar {
+  width: 5px;
 }
-
-.overflow-y-auto::-webkit-scrollbar {
-  width: 4px;
-}
-.overflow-y-auto::-webkit-scrollbar-thumb {
+.max-h-\[500px\]::-webkit-scrollbar-thumb {
   background: var(--sidebar-border);
   border-radius: 10px;
 }

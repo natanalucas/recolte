@@ -14,20 +14,18 @@ use App\Http\Controllers\TypeCertificationController;
 use App\Http\Controllers\TriageController;
 use App\Http\Controllers\FicheReceptionController;
 use Illuminate\Http\Request;
+use App\Http\Controllers\PaletisationController;
+use App\Http\Controllers\ExpeditionController;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
 ])->name('home');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified'])->group(function () {    
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
-    //Route::inertia('fiche-triage', 'fiche/Triage')->name('fiche-triage');
-    Route::inertia('fiche-soufrage', 'fiche/Soufrage')->name('fiche-soufrage');
-    //Route::inertia('fiche-reception', 'fiche/Reception')->name('fiche-reception');
-    Route::inertia('fiche-paletisation', 'fiche/Paletisation')->name('fiche-paletisation');
-    Route::inertia('fiche-expedition', 'fiche/Expedition')->name('fiche-expedition');
-   // Route::inertia('enqueteurs', 'enqueteurs/Liste')->name('enqueteurs');
-    // Route::inertia('producteurs', 'producteurs/Liste')->name('producteurs');
+    //Route::inertia('fiche-paletisation', 'fiche/Paletisation')->name('fiche-paletisation');
+    //Route::inertia('fiche-expedition', 'fiche/Expedition')->name('fiche-expedition');
+    
     Route::get('archives/{slug}', function ($slug) {
         return Inertia::render('archives/Produit', [
             'slug' => $slug 
@@ -74,16 +72,37 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('triage/{triage}',       [TriageController::class, 'update'] )->name('triage.update');
     Route::delete('triage/{triage}',    [TriageController::class, 'destroy'])->name('triage.destroy');
 
+    Route::get('/palettisation', [PaletisationController::class, 'index'])
+        ->name('paletisation.index');
+ 
+    Route::post('/palettisation', [PaletisationController::class, 'store'])
+        ->name('paletisation.store');
+ 
+    Route::put('/palettisation/{paletisation}', [PaletisationController::class, 'update'])
+        ->name('paletisation.update');
+ 
+    Route::delete('/palettisation/{paletisation}', [PaletisationController::class, 'destroy'])
+        ->name('paletisation.destroy');
+
+    Route::get('/expeditions', [ExpeditionController::class, 'index'])->name('expeditions.index');
+    Route::post('/expeditions', [ExpeditionController::class, 'store'])->name('expeditions.store');
+    Route::put('/expeditions/{expedition}', [ExpeditionController::class, 'update'])->name('expeditions.update');
+    Route::delete('/expeditions/{expedition}', [ExpeditionController::class, 'destroy'])->name('expeditions.destroy');
+
     Route::post('settings/poids', function (Request $r) {
         \App\Models\Setting::set('poids_par_caissette', $r->input('poids_par_caissette'));
         return back();
     })->name('settings.poids');
+
+    Route::get('/fiches-reception/{ficheReception}/export-pdf', [FicheReceptionController::class, 'exportPdf'])
+    ->name('fiches-reception.export-pdf');
 
     Route::resource('reception', FicheReceptionController::class)
      ->only(['index', 'store', 'update', 'destroy']);
     });
 
     Route::get('/enqueteurs/liste', [EnqueteurController::class, 'liste']);
+    
     
 
 require __DIR__.'/settings.php';
