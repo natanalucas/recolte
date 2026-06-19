@@ -125,6 +125,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/fiches-paletisation/annee/{year}/export-pdf', [ExportPdfController::class, 'paletisationByYear'])
     ->name('fiches-paletisation.export-pdf-annee');
 
+    Route::get('/fiches-expedition/annee/{year}/export-pdf', [ExportPdfController::class, 'expeditionByYear'])
+    ->name('fiches-expedition.export-pdf-annee');
+
     Route::get('/enqueteurs/liste', [EnqueteurController::class, 'liste']);
     
     

@@ -53,6 +53,8 @@ function pdfUrl(kind: string): string | null {
         case 'palettisation':
             // Pas de filtre produit pour la palettisation
             return `/fiches-paletisation/annee/${selectedYear.value}/export-pdf?produit=${props.slug}`;
+        case 'expedition':
+            return `/fiches-expedition/annee/${selectedYear.value}/export-pdf?produit=${props.slug}`;
         default:
             return null;
     }
