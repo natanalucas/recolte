@@ -16,6 +16,7 @@ use App\Http\Controllers\FicheReceptionController;
 use Illuminate\Http\Request;
 use App\Http\Controllers\PaletisationController;
 use App\Http\Controllers\ExpeditionController;
+use App\Http\Controllers\ExportPdfController;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -100,6 +101,25 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('reception', FicheReceptionController::class)
      ->only(['index', 'store', 'update', 'destroy']);
     });
+
+    Route::get('/fiches-reception/{ficheReception}/export-pdf', [ExportPdfController::class, 'reception'])
+    ->name('fiches-reception.export-pdf');
+
+    Route::get('/fiches-reception/annee/{year}/export-pdf', [ExportPdfController::class, 'receptionByYear'])
+        ->name('fiches-reception.export-pdf-annee');
+
+    Route::get('/fiches-soufrage/{ficheNumber}/export-pdf', [ExportPdfController::class, 'soufrage'])
+        ->name('fiches-soufrage.export-pdf');
+
+    Route::get('/fiches-triage/{ficheNumber}/export-pdf', [ExportPdfController::class, 'triage'])
+        ->name('fiches-triage.export-pdf');
+
+    Route::get('/fiches-triage/annee/{year}/export-pdf', [ExportPdfController::class, 'triageByYear'])
+        ->where('year', '[0-9]{4}')
+        ->name('fiches-triage.export-pdf-annee');
+
+    Route::get('/fiches-soufrage/annee/{year}/export-pdf', [ExportPdfController::class, 'soufrageByYear'])
+    ->name('fiches-soufrage.export-pdf-annee');
 
     Route::get('/enqueteurs/liste', [EnqueteurController::class, 'liste']);
     

@@ -1,21 +1,60 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import AppLayout from '@/layouts/AppLayout.vue';
+
+const props = defineProps<{
+    slug: string;
+}>();
 
 // Gestion des années
 const currentYear = new Date().getFullYear();
 const selectedYear = ref(currentYear);
 const years = [2026, 2025, 2024, 2023];
 
-// Définition des catégories avec leurs icônes respectives
+// Définition des catégories avec leurs icônes et leur route d'export PDF
 const categories = [
-    { title: 'Réception', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-    { title: 'Soufrage', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-    { title: 'Triage', icon: 'M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z' },
-    { title: 'Palettisation', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
-    { title: 'Expédition', icon: 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0' },
+    {
+        title: 'Réception',
+        icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+        kind: 'reception',
+    },
+    {
+        title: 'Soufrage',
+        icon: 'M13 10V3L4 14h7v7l9-11h-7z',
+        kind: 'soufrage',
+    },
+    {
+        title: 'Triage',
+        icon: 'M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z',
+        kind: 'triage',
+    },
+    {
+        title: 'Palettisation',
+        icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+        kind: 'palettisation',
+    },
+    {
+        title: 'Expédition',
+        icon: 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0',
+        kind: 'expedition',
+    },
 ];
+
+// Construit l'URL d'export PDF selon la catégorie, l'année et le produit (slug)
+function pdfUrl(kind: string): string | null {
+    switch (kind) {
+        case 'reception':
+            return `/fiches-reception/annee/${selectedYear.value}/export-pdf?produit=${props.slug}`;
+        case 'soufrage':
+            return `/fiches-soufrage/annee/${selectedYear.value}/export-pdf?produit=${props.slug}`;
+        case 'triage':
+            return `/fiches-triage/annee/${selectedYear.value}/export-pdf?produit=${props.slug}`;
+        default:
+            // Palettisation et Expédition : pas encore d'export PDF disponible
+            return null;
+    }
+}
 
 const breadcrumbs = [
     { title: 'Archives', href: '#' },
@@ -28,7 +67,7 @@ const breadcrumbs = [
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="p-4 md:p-8 space-y-8 max-w-7xl mx-auto">
-            
+
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--sidebar-border)] pb-6">
                 <div>
                     <h1 class="text-2xl font-black uppercase tracking-tight">
@@ -48,39 +87,52 @@ const breadcrumbs = [
                 </div>
             </div>
 
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-    <div 
-        v-for="cat in categories" 
-        :key="cat.title"
-        class="group bg-[var(--card)] border border-[var(--sidebar-border)] rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-[var(--brand-green)]/40 transition-all flex flex-col"
-    >
-        <div class="p-6 flex flex-col items-center text-center space-y-4 flex-grow">
-            <div class="p-4 rounded-2xl bg-[var(--brand-green)]/10 text-[var(--brand-green)] group-hover:scale-110 transition-transform duration-300">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" :d="cat.icon"></path>
-                </svg>
-            </div>
-            
-            <div>
-                <h3 class="text-[14px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">
-                    {{ cat.title }}
-                </h3>
-<p class="text-[12px] text-[var(--brand-green)] dark:text-[var(--brand-orange)] mt-1 font-medium italic">
-    Archives {{ selectedYear }}
-</p>
-            </div>
-        </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div
+                    v-for="cat in categories"
+                    :key="cat.title"
+                    class="group bg-[var(--card)] border border-[var(--sidebar-border)] rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-[var(--brand-green)]/40 transition-all flex flex-col"
+                >
+                    <div class="p-6 flex flex-col items-center text-center space-y-4 flex-grow">
+                        <div class="p-4 rounded-2xl bg-[var(--brand-green)]/10 text-[var(--brand-green)] group-hover:scale-110 transition-transform duration-300">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" :d="cat.icon"></path>
+                            </svg>
+                        </div>
 
-        <div class="p-4 bg-slate-50/50 dark:bg-black/10 border-t border-[var(--sidebar-border)]">
-            <button class="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white dark:bg-slate-800 border border-[var(--brand-orange)]/30 text-[var(--brand-orange)] hover:bg-[var(--brand-orange)] hover:text-white transition-all shadow-sm group/btn">
-                <svg class="w-5 h-5 text-[var(--brand-orange)] group-hover/btn:text-white group-hover/btn:scale-110 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                </svg>
-                <span class="text-[11px] font-black uppercase tracking-wide">Voir le résumé PDF</span>
-            </button>
-        </div>
-    </div>
+                        <div>
+                            <h3 class="text-[14px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">
+                                {{ cat.title }}
+                            </h3>
+                            <p class="text-[12px] text-[var(--brand-green)] dark:text-[var(--brand-orange)] mt-1 font-medium italic">
+                                Archives {{ selectedYear }}
+                            </p>
+                        </div>
+                    </div>
+<div class="p-4 bg-slate-50/50 dark:bg-black/10 border-t border-[var(--sidebar-border)]">
+    <template v-if="pdfUrl(cat.kind)">
+        <a
+            :href="pdfUrl(cat.kind)!"
+            target="_blank"
+            class="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white dark:bg-slate-800 border border-[var(--brand-orange)]/30 text-[var(--brand-orange)] hover:bg-[var(--brand-orange)] hover:text-white transition-all shadow-sm group/btn"
+        >
+            <svg class="w-5 h-5 text-[var(--brand-orange)] group-hover/btn:text-white group-hover/btn:scale-110 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+            </svg>
+            <span class="text-[11px] font-black uppercase tracking-wide">Voir le résumé PDF</span>
+        </a>
+    </template>
+    <template v-else>
+        <button
+            disabled
+            class="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 cursor-not-allowed"
+        >
+            <span class="text-[11px] font-black uppercase tracking-wide">Pas encore disponible</span>
+        </button>
+    </template>
 </div>
+                </div>
+            </div>
 
         </div>
     </AppLayout>

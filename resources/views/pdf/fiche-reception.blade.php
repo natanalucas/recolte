@@ -4,6 +4,10 @@
     <meta charset="utf-8">
     <title>Fiche de réception {{ $fiche->fiche_number }}</title>
     <style>
+        @page {
+            size: A4 landscape;
+            margin: 15px;
+        }
         body { font-family: sans-serif; font-size: 11px; color: #1a1a1a; }
         h1 { font-size: 16px; text-align: center; margin-bottom: 4px; }
         .meta { text-align: center; margin-bottom: 16px; color: #555; }
