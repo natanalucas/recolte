@@ -20,7 +20,7 @@
     <table>
         <thead>
             <tr>
-                <th>Fiche N°</th>
+                <!-- <th>Fiche N°</th> -->
                 <th>Parcelle</th>
                 <th>Producteur</th>
                 <th>Cycle</th>
@@ -37,7 +37,7 @@
         <tbody>
             @foreach($lignes as $ligne)
                 <tr>
-                    <td>{{ $ligne->fiche_number ?? '-' }}</td>
+                    <!-- <td>{{ $ligne->fiche_number ?? '-' }}</td> -->
                     <td>{{ $ligne->parcelle->num ?? '-' }}</td>
                     <td>
                         {{ $ligne->parcelle->producteur->nom ?? '' }}
@@ -50,8 +50,8 @@
                     <td>{{ $ligne->soufre }}</td>
                     <td>{{ $ligne->debut }}</td>
                     <td>{{ $ligne->fin }}</td>
-                    <td>{{ $ligne->operateur->name ?? '-' }}</td>
-                    <td>{{ $ligne->controle_raqt }}</td>
+                    <td>{{ $ligne->operateur ? $ligne->operateur->nom . ' ' . $ligne->operateur->prenom : '-' }}</td>
+                    <td>{{ $ligne->controle_raqt == 1 ? "Validé" : "Non valide" }}</td>
                 </tr>
             @endforeach
         </tbody>

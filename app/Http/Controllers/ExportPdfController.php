@@ -6,6 +6,7 @@ use App\Models\FicheReception;
 use App\Services\Pdf\FicheReceptionPdfService;
 use App\Services\Pdf\SoufragePdfService;
 use App\Services\Pdf\TriagePdfService;
+use App\Services\Pdf\PaletisationPdfService;
 use Illuminate\Http\Request;
 
 class ExportPdfController extends Controller
@@ -14,6 +15,7 @@ class ExportPdfController extends Controller
         private FicheReceptionPdfService $receptionPdf,
         private SoufragePdfService $soufragePdf,
         private TriagePdfService $triagePdf,
+        private PaletisationPdfService $paletisationPdf,
     ) {}
 
     public function reception(FicheReception $ficheReception)
@@ -51,4 +53,11 @@ class ExportPdfController extends Controller
 
         return $this->triagePdf->downloadByYear($year, $produitFiltre);
     } 
+
+    public function paletisationByYear(Request $request, int $year)
+    {
+        $produit = $request->query('produit', 'litchi');
+
+        return $this->paletisationPdf->downloadByYear($year, $produit);
+    }
 }

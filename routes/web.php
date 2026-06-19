@@ -121,6 +121,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/fiches-soufrage/annee/{year}/export-pdf', [ExportPdfController::class, 'soufrageByYear'])
     ->name('fiches-soufrage.export-pdf-annee');
 
+    // Palettisation — pas de filtre produit car pas de lien parcelle/producteur
+    Route::get('/fiches-paletisation/annee/{year}/export-pdf', [ExportPdfController::class, 'paletisationByYear'])
+    ->name('fiches-paletisation.export-pdf-annee');
+
     Route::get('/enqueteurs/liste', [EnqueteurController::class, 'liste']);
     
     

@@ -50,8 +50,10 @@ function pdfUrl(kind: string): string | null {
             return `/fiches-soufrage/annee/${selectedYear.value}/export-pdf?produit=${props.slug}`;
         case 'triage':
             return `/fiches-triage/annee/${selectedYear.value}/export-pdf?produit=${props.slug}`;
+        case 'palettisation':
+            // Pas de filtre produit pour la palettisation
+            return `/fiches-paletisation/annee/${selectedYear.value}/export-pdf?produit=${props.slug}`;
         default:
-            // Palettisation et Expédition : pas encore d'export PDF disponible
             return null;
     }
 }
