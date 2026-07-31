@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\PaletisationController;
 use App\Http\Controllers\ExpeditionController;
 use App\Http\Controllers\ExportPdfController;
+use App\Http\Controllers\StatistiqueController;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -129,6 +130,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     ->name('fiches-expedition.export-pdf-annee');
 
     Route::get('/enqueteurs/liste', [EnqueteurController::class, 'liste']);
+
+    Route::get('/statistiques/{slug?}', [StatistiqueController::class, 'index'])->name('statistiques.index');
     
     
 

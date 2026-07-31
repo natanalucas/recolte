@@ -3,11 +3,7 @@ import { ref, reactive, computed, watch } from 'vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/layouts/AppLayout.vue';
 import HeaderFiche from './HeaderFiche.vue';
-import { Pencil, Trash2 } from 'lucide-vue-next'; // Ajout des icônes pour les boutons d'action
-
-// Si 'route' n'est pas disponible globalement dans votre configuration Ziggy, 
-// vous pouvez décommenter la ligne suivante :
-// import { route } from 'ziggy-js';
+import { Pencil, Trash2 } from 'lucide-vue-next';
 
 // Props reçues depuis le contrôleur Laravel
 const props = defineProps<{
@@ -15,6 +11,7 @@ const props = defineProps<{
     availablePalettes: any[];
     certifications: any[];
     enqueteurs: { id: number; nom: string; prenom: string; poste: string }[];
+    usedPaletteIds: number[]; // IDs des palettes déjà utilisées dans d'autres expéditions
 }>();
 
 const isModalOpen = ref(false);
@@ -22,15 +19,13 @@ const isEditing = ref(false);
 const currentId = ref<number | null>(null);
 
 // ---------------------------------------------------------------------------
-// Pagination (côté client — la liste complète des fiches est déjà chargée via Inertia)
+// Pagination (côté client)
 // ---------------------------------------------------------------------------
 const pageSize = ref(10);
 const currentPage = ref(1);
 
 const pageCount = computed(() => Math.max(1, Math.ceil(props.expeditions.length / pageSize.value)));
 
-// Si la liste change (ajout/suppression) et qu'on se retrouve sur une page
-// qui n'existe plus, on revient à la dernière page disponible.
 watch([() => props.expeditions.length, pageSize], () => {
     if (currentPage.value > pageCount.value) currentPage.value = pageCount.value;
 });
@@ -40,7 +35,6 @@ const paginatedExpeditions = computed(() => {
     return props.expeditions.slice(start, start + pageSize.value);
 });
 
-// Plage affichée dans le pied de tableau, ex. "11–20 sur 47"
 const paginationRangeLabel = computed(() => {
     if (props.expeditions.length === 0) return '0–0 sur 0';
     const start = (currentPage.value - 1) * pageSize.value + 1;
@@ -60,7 +54,6 @@ function goToNextPage() {
     goToPage(currentPage.value + 1);
 }
 
-// Liste compacte de numéros de page à afficher (avec "…" pour les trous).
 const paginationItems = computed<(number | '…')[]>(() => {
     const total = pageCount.value;
     const current = currentPage.value;
@@ -97,7 +90,31 @@ const form = useForm({
     palettes: [] as Array<{ id: number; paletisation_id: string | number; type: string; certif: string }>
 });
 
-// Ajouter une nouvelle ligne vide (Incrémentation automatique du N°)
+// ---------------------------------------------------------------------------
+// Palettes disponibles (filtrage des déjà utilisées)
+// ---------------------------------------------------------------------------
+const availablePalettesFiltered = computed(() => {
+    // Si on est en édition, on récupère les IDs des palettes de l'expédition courante
+    const currentPaletteIds = new Set<number>();
+    if (isEditing.value && currentId.value) {
+        const currentExpedition = props.expeditions.find(e => e.id === currentId.value);
+        if (currentExpedition) {
+            currentExpedition.palettes?.forEach((p: any) => {
+                if (p.paletisation_id) currentPaletteIds.add(p.paletisation_id);
+            });
+        }
+    }
+
+    return props.availablePalettes.filter(pal => {
+        // Si la palette est déjà utilisée dans une autre expédition (et pas dans celle qu'on édite), on l'exclut
+        if (props.usedPaletteIds.includes(pal.id) && !currentPaletteIds.has(pal.id)) {
+            return false;
+        }
+        return true;
+    });
+});
+
+// Ajouter une nouvelle ligne vide
 const addPaletteRow = () => {
     const nextId = form.palettes.length + 1;
     form.palettes.push({
@@ -115,8 +132,7 @@ const handlePaletteChange = (index: number) => {
     
     if (item) {
         form.palettes[index].type = item.type_carton || 'Inconnu';
-        // Récupération du nom de la certification (Globalgap, Fairtrade, etc.)
-        form.palettes[index].certif = item.certification?.nom || 'C';
+        form.palettes[index].certif = item.typeCertification?.nom || 'C';
     } else {
         form.palettes[index].type = '-';
         form.palettes[index].certif = '-';
@@ -125,8 +141,8 @@ const handlePaletteChange = (index: number) => {
 
 const openCreateModal = () => {
     isEditing.value = false;
+    currentId.value = null;
     form.reset();
-    // Générer par défaut 1 ligne de palette pré-remplie à blanc
     form.palettes = Array.from({ length: 1 }, (_, i) => ({
         id: i + 1,
         paletisation_id: '',
@@ -158,29 +174,22 @@ const openEditModal = (fiche: any) => {
         id: idx + 1,
         paletisation_id: p.paletisation_id,
         type: p.paletisation?.type_carton || '-',
-        certif: p.paletisation?.certification?.nom || '-'
+        certif: p.paletisation?.typeCertification?.nom || '-'
     }));
 
     isModalOpen.value = true;
 };
 
 const submit = () => {
-    // Filtrer pour ne pas envoyer de lignes vides non sélectionnées
     const cleanPalettes = form.palettes.filter(p => p.paletisation_id !== '');
-    
-    // On duplique temporairement les données pour l'envoi propre
     const payload = { ...form.data(), palettes: cleanPalettes };
 
     if (isEditing.value && currentId.value) {
-        // Utilisation de la route Laravel 'expeditions.update' via le helper Ziggy
         router.put(route('expeditions.update', currentId.value), payload, {
             onSuccess: () => closeModal()
         });
     } else {
-        // Utilisation de la route Laravel 'expeditions.store' via le helper Ziggy
         router.post(route('expeditions.store'), payload, {
-            // La liste est triée par latest(), la nouvelle fiche apparaît donc
-            // en première position : on revient à la page 1 pour qu'elle soit visible.
             onSuccess: () => { closeModal(); currentPage.value = 1; }
         });
     }
@@ -193,7 +202,6 @@ const closeModal = () => {
 
 const confirmDelete = (fiche: any) => {
     if(confirm('Voulez-vous vraiment supprimer cette fiche d\'expédition ?')) {
-        // Utilisation de la route Laravel 'expeditions.destroy' via le helper Ziggy
         router.delete(route('expeditions.destroy', fiche.id));
     }
 };
@@ -376,7 +384,7 @@ const confirmDelete = (fiche: any) => {
                                                         class="w-full bg-transparent outline-none text-[12px] font-mono font-bold text-center cursor-pointer focus:text-[var(--brand-green)]"
                                                     >
                                                         <option value="">-- Sélectionner --</option>
-                                                        <option v-for="ap in availablePalettes" :key="ap.id" :value="ap.id">
+                                                        <option v-for="ap in availablePalettesFiltered" :key="ap.id" :value="ap.id">
                                                             {{ ap.num_palette }}
                                                         </option>
                                                     </select>
@@ -442,13 +450,13 @@ const confirmDelete = (fiche: any) => {
                                                 <td class="w-1/3 bg-[var(--brand-green)] text-white text-center font-black uppercase text-[12px] leading-tight">Chargement / Empotage</td>
                                                 <td class="w-2/3 p-0 text-white">
                                                     <div class="flex">
-                                                        <div class="flex-1 border-r border-[var(--sidebar-border)]">
+                                                        <div class="flex-1 border-r border-[var(--sidebar-border)]" @click="$event.currentTarget.querySelector('input').showPicker()">
                                                             <div class="bg-[var(--brand-green)] py-1.5 text-center text-[10px] font-black uppercase border-b border-white/10">Début</div>
-                                                            <input v-model="form.debut_empotage" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
+                                                            <input @input="(e) => (e.target as HTMLInputElement).blur()" v-model="form.debut_empotage" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
                                                         </div>
-                                                        <div class="flex-1">
+                                                        <div class="flex-1" @click="$event.currentTarget.querySelector('input').showPicker()">
                                                             <div class="bg-[var(--brand-green)] py-1.5 text-center text-[10px] font-black uppercase border-b border-white/10">Fin</div>
-                                                            <input v-model="form.fin_empotage" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
+                                                            <input @input="(e) => (e.target as HTMLInputElement).blur()" v-model="form.fin_empotage" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
                                                         </div>
                                                     </div>
                                                 </td>
@@ -464,13 +472,13 @@ const confirmDelete = (fiche: any) => {
                                                 <td class="w-1/3 bg-[var(--brand-green)] text-white text-center font-black uppercase text-[10px] leading-tight">Départ Station & Arrivée Port</td>
                                                 <td class="w-2/3 p-0 text-white">
                                                     <div class="flex">
-                                                        <div class="flex-1 border-r border-[var(--sidebar-border)]">
+                                                        <div class="flex-1 border-r border-[var(--sidebar-border)]" @click="$event.currentTarget.querySelector('input').showPicker()" >
                                                             <div class="bg-[var(--brand-green)] py-1.5 text-center text-[10px] font-black uppercase border-b border-white/10">Départ Station</div>
-                                                            <input v-model="form.depart_station" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
+                                                            <input @input="(e) => (e.target as HTMLInputElement).blur()" v-model="form.depart_station" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
                                                         </div>
-                                                        <div class="flex-1">
+                                                        <div class="flex-1" @click="$event.currentTarget.querySelector('input').showPicker()">
                                                             <div class="bg-[var(--brand-green)] py-1.5 text-center text-[10px] font-black uppercase border-b border-white/10">Arrivée Port</div>
-                                                            <input v-model="form.arrivee_port" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
+                                                            <input @input="(e) => (e.target as HTMLInputElement).blur()" v-model="form.arrivee_port" type="datetime-local" class="w-full bg-[var(--card)] text-black dark:text-white p-2 text-[12px] font-bold text-center outline-none">
                                                         </div>
                                                     </div>
                                                 </td>

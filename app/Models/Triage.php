@@ -35,4 +35,5 @@ class Triage extends Model
     {
         return $this->belongsTo(User::class, 'enqueteur_id');
     }
+
 }

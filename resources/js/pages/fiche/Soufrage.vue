@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, nextTick } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import HeaderFiche from './HeaderFiche.vue';
@@ -28,7 +28,7 @@ interface SoufrageRecord {
     fiche_number: string | null;
     lieu_traitement: string | null;
     cycle: string;
-    box: string;
+    box: string | number | null;
     concent: string;
     parcelle_id: number | null; // Modifié
     code: string;
@@ -37,10 +37,19 @@ interface SoufrageRecord {
     debut: string;
     fin: string;
     controle_raqt: boolean;
+    reception_id: number | null;
     operateur: { id: number; nom: string; prenom: string; travail: 'jour' | 'nuit' } | null;
     raqt: { id: number; nom: string; prenom: string } | null;
     parcelle?: { id: number; num: string; localisation: string | null } | null; // Ajouté si lié en relation
+    reception?: { id: number; fiche_number: string | number | null } | null;
     created_at: string;
+}
+
+interface FicheReception {
+    id: number;
+    fiche_number: string | number | null;
+    caissette_total: number;
+    parcelle_id: number | null;
 }
 
 interface Parcelle {
@@ -65,6 +74,7 @@ const props = defineProps<{
     };
     parcelles: Parcelle[]; 
     enqueteurs: { id: number; nom: string; prenom: string; poste: string }[];
+    receptions: FicheReception[];
 }>();
 
 // ── État global de la fiche ───────────────────────────
@@ -93,6 +103,7 @@ const makeForm = () => ({
     fin:          '',
     operateur_id: null as number | null,
     controle_raqt: false,
+    reception_id: null as number | null,
 });
 
 const form        = reactive(makeForm());
@@ -107,6 +118,13 @@ watch([() => form.parcelle_id, () => form.cycle], () => {
     const parcelle = String(num ?? '').padStart(2, '0').slice(-2);
     const cycle    = String(form.cycle).padStart(3, '0').slice(-3);
     form.code = parcelle + cycle;
+});
+
+// Auto-remplissage de la caissette à partir de la fiche de réception choisie
+watch(() => form.reception_id, () => {
+    const reception = props.receptions.find(r => r.id === form.reception_id);
+    form.caissette   = reception ? reception.caissette_total : null;
+    form.parcelle_id = reception ? reception.parcelle_id : null;
 });
 
 const resetForm = () => {
@@ -162,6 +180,11 @@ const fmtDate = (d: string | null) => {
     });
 };
 
+const certificationName = (id: string | number | null) => {
+    if (!id) return null;
+    return props.certifications.find(c => String(c.id) === String(id))?.nom ?? id;
+};
+
 // ── État du tableau & Réactivité Contrôle RAQT ────────
 const controleMap = reactive<Record<number, boolean>>({});
 
@@ -203,17 +226,20 @@ const editForm   = reactive({
     fin: '',
     operateur_id: null as number | null,
     controle_raqt: false,
+    reception_id: null as number | null,
 });
 const editSaving = ref(false);
 const editError  = ref<string | null>(null);
+const suppressEditReceptionWatch = ref(false);
 
 const openEdit = (row: SoufrageRecord) => {
     editingId.value = row.id;
+    suppressEditReceptionWatch.value = true;
     Object.assign(editForm, {
         cycle:         row.cycle,
-        box:           row.box || '',
+        box:           row.box !== null && row.box !== undefined ? String(row.box) : '', // Cast en String
         concent:       row.concent || '',
-        parcelle_id:   row.parcelle_id, // Modifié
+        parcelle_id:   row.parcelle_id,
         code:          row.code,
         caissette:     row.caissette,
         soufre:        row.soufre,
@@ -221,8 +247,10 @@ const openEdit = (row: SoufrageRecord) => {
         fin:           row.fin?.slice(0, 16)   ?? '',
         operateur_id:  row.operateur?.id ?? null,
         controle_raqt: row.controle_raqt,
+        reception_id:  row.reception_id ?? row.reception?.id ?? null,
     });
     editError.value = null;
+    nextTick(() => { suppressEditReceptionWatch.value = false; });
 };
 
 const closeEdit = () => {
@@ -238,6 +266,14 @@ watch([() => editForm.parcelle_id, () => editForm.cycle], () => {
     const parcelle = String(num ?? '').padStart(2, '0').slice(-2);
     const cycle    = String(editForm.cycle ?? '').padStart(3, '0').slice(-3);
     editForm.code  = parcelle + cycle;
+});
+
+// Auto-remplissage de la caissette à partir de la fiche de réception choisie (édition)
+watch(() => editForm.reception_id, () => {
+    if (suppressEditReceptionWatch.value) return;
+    const reception = props.receptions.find(r => r.id === editForm.reception_id);
+    editForm.caissette   = reception ? reception.caissette_total : null;
+    editForm.parcelle_id = reception ? reception.parcelle_id : null;
 });
 
 const saveEdit = () => {
@@ -257,6 +293,7 @@ const saveEdit = () => {
         fin:           editForm.fin,
         operateur_id:  editForm.operateur_id,
         controle_raqt: editForm.controle_raqt,
+        reception_id:  editForm.reception_id,
     }, {
         preserveScroll: true,
         onSuccess: () => {
@@ -353,44 +390,48 @@ const executeDelete = () => {
 
                 <div class="p-6 space-y-5">
 
-                    <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-xl p-5 shadow-sm grid grid-cols-2 gap-4">
-    <div class="space-y-1.5">
-        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
-            Enquêteur Responsable *
-        </label>
-        <select v-model="enqueteurId" class="input-line w-full">
-            <option :value="null">— choisir un enquêteur —</option>
-            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
-                {{ e.prenom }} {{ e.nom }}
-            </option>
-        </select>
-    </div>
-
-    <div class="space-y-1.5">
-        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
-            Nom RAQT *
-        </label>
-        <select v-model="selectedRaqt" class="input-line w-full">
-            <option :value="null" disabled>
-                {{ props.raqts.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}
-            </option>
-            <option v-for="r in props.raqts" :key="r.id" :value="r.id">
-                {{ r.prenom }} {{ r.nom }}
-            </option>
-        </select>
-    </div>
-</div>
-                    <div class="grid grid-cols-4 gap-4">
+                    <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-xl p-5 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="space-y-1.5">
-                            <label class="text-[12px] font-black uppercase tracking-wider">N° Box</label>
-                            <input v-model="form.box" type="number" class="input-line w-full" placeholder="—" />
-                        </div>
-                        <div class="space-y-1.5">
-                            <label class="text-[12px] font-black uppercase tracking-wider">Type de Certification</label>
-                            <select v-model="form.concent" class="input-line w-full">
-                                <option :value="null" disabled>{{ props.certifications.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}</option>
-                                <option v-for="c in props.certifications" :key="c.id" :value="c.id">{{ c.nom }}</option>
+                            <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                                Enquêteur Responsable *
+                            </label>
+                            <select v-model="enqueteurId" class="input-line w-full">
+                                <option :value="null">— choisir un enquêteur —</option>
+                                <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                                    {{ e.prenom }} {{ e.nom }}
+                                </option>
                             </select>
+                        </div>
+
+                        <div class="space-y-1.5">
+                            <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                                Nom RAQT *
+                            </label>
+                            <select v-model="selectedRaqt" class="input-line w-full">
+                                <option :value="null" disabled>
+                                    {{ props.raqts.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}
+                                </option>
+                                <option v-for="r in props.raqts" :key="r.id" :value="r.id">
+                                    {{ r.prenom }} {{ r.nom }}
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="space-y-1.5">
+                            <label class="text-[12px] font-black uppercase tracking-wider">Réception</label>
+                            <select v-model="form.reception_id" class="input-line w-full">
+                                <option :value="null">—</option>
+                                <option v-for="r in props.receptions" :key="r.id" :value="r.id">
+                                    {{ r.fiche_number ?? r.id }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <div class="space-y-1.5">
+                            <label class="text-[12px] font-black uppercase tracking-wider">Qté Caissette</label>
+                            <input v-model="form.caissette" type="number" class="input-line w-full" placeholder="—" />
                         </div>
                         <div class="space-y-1.5">
                             <label class="text-[12px] font-black uppercase tracking-wider">Parcelle</label>
@@ -411,10 +452,18 @@ const executeDelete = () => {
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-3 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div class="space-y-1.5">
-                            <label class="text-[12px] font-black uppercase tracking-wider">Qté Caissette</label>
-                            <input v-model="form.caissette" type="number" class="input-line w-full" placeholder="—" />
+                            <label class="text-[12px] font-black uppercase tracking-wider">N° Box</label>
+                            <input v-model="form.box" type="number" class="input-line w-full" placeholder="—" />
+                        </div>
+                        <div class="space-y-1.5">
+                            <label class="text-[12px] font-black uppercase tracking-wider">Concent. Soufre g/T</label>
+                            <!-- <select v-model="form.concent" class="input-line w-full">
+                                <option :value="null" disabled>{{ props.certifications.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}</option>
+                                <option v-for="c in props.certifications" :key="c.id" :value="c.id">{{ c.nom }}</option>
+                            </select> -->
+                            <input v-model="form.concent" type="text" class="input-line w-full" placeholder="Concent." />
                         </div>
                         <div class="space-y-1.5">
                             <label class="text-[12px] font-black uppercase tracking-wider">Qté Soufre (g)</label>
@@ -433,7 +482,7 @@ const executeDelete = () => {
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-3 gap-4 items-end">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                         <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
                             <label class="text-[12px] font-black uppercase tracking-wider">Début</label>
                             <input v-model="form.debut" type="datetime-local" class="input-line w-full text-[12px] font-bold" @input="(e) => (e.target as HTMLInputElement).blur()"/>
@@ -497,16 +546,18 @@ const executeDelete = () => {
                             <thead>
                                 <tr class="text-white bg-[var(--brand-green)]/80 text-[10px] font-black uppercase">
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-20">Cycle</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10 w-24">Réception</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10 w-32">Parcelle</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10 w-28">Code Traça</th>
+                                     <th class="px-3 py-3 text-center border-r border-white/10 w-24">Caissette</th>
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-20">Box</th>
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-24">Conc.</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10 w-32">Parcelle</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10 w-28">Code</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10 w-24">Caissette</th>
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-28">Soufre (g)</th>
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-40">Début</th>
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-40">Fin</th>
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-48">Opérateur</th>
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-40">RAQT</th>
+                                    
                                     <th class="px-3 py-3 text-center border-r border-white/10 w-36">Contrôle RAQT</th>
                                     <th class="px-3 py-3 text-center w-44">Actions</th>
                                 </tr>
@@ -514,7 +565,7 @@ const executeDelete = () => {
 
                             <tbody class="divide-y divide-[var(--sidebar-border)]">
                                 <tr v-if="props.soufrages.total === 0">
-                                    <td colspan="13" class="py-12 text-center text-[12px] font-bold opacity-30 uppercase tracking-widest">
+                                    <td colspan="14" class="py-12 text-center text-[12px] font-bold opacity-30 uppercase tracking-widest">
                                         Aucune ligne enregistrée
                                     </td>
                                 </tr>
@@ -522,20 +573,24 @@ const executeDelete = () => {
                                 <template v-for="row in props.soufrages.data" :key="row.id">
                                     <tr v-if="editingId !== row.id" class="hover:bg-[var(--brand-green)]/5 transition-colors text-[12px]">
                                         <td class="px-3 py-3 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">{{ row.cycle }}</td>
-                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.box || '—' }}</td>
-                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <span v-if="row.concent" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--brand-green)]/10 text-[var(--brand-green)]">
-                                                {{ row.concent }}
-                                            </span>
-                                            <span v-else>—</span>
+                                        <td class="px-3 py-3 text-center text-[11px] font-bold border-r border-[var(--sidebar-border)]/30">
+                                            {{ row.reception?.fiche_number ?? row.reception_id ?? '—' }}
                                         </td>
-                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
+                                                                                <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
                                             {{ row.parcelle ? row.parcelle.num : '—' }}
                                         </td>
                                         <td class="px-3 py-3 text-center font-mono text-[11px] border-r border-[var(--sidebar-border)]/30">
                                             {{ row.parcelle && row.cycle ? String(row.parcelle.num).padStart(2, '0').slice(0, 2) + row.cycle : '—' }}
                                         </td>
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.caissette ?? '—' }}</td>
+                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.box || '—' }}</td>
+                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
+                                            <span v-if="row.concent" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--brand-orange)]/10 text-[var(--brand-orange)]">
+                                                {{ certificationName(row.concent) }}
+                                            </span>
+                                            <span v-else>—</span>
+                                        </td>
+
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.soufre ?? '—' }}</td>
                                         <td class="px-3 py-3 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">{{ fmtDate(row.debut) }}</td>
                                         <td class="px-3 py-3 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">{{ fmtDate(row.fin) }}</td>
@@ -551,6 +606,7 @@ const executeDelete = () => {
                                         <td class="px-3 py-3 text-center text-[11px] font-bold border-r border-[var(--sidebar-border)]/30">
                                             {{ row.raqt ? `${row.raqt.prenom} ${row.raqt.nom}` : '—' }}
                                         </td>
+
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
                                             <button @click="toggleControle(row.id)" :disabled="savingControle[row.id]" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase transition-all disabled:opacity-50" :class="controleMap[row.id] ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 hover:bg-emerald-200' : 'bg-[var(--sidebar-border)]/20 hover:bg-[var(--sidebar-border)]/40'">
                                                 <CheckCircle2 v-if="controleMap[row.id]" class="w-3 h-3" />
@@ -574,18 +630,15 @@ const executeDelete = () => {
                                             <input v-model="editForm.cycle" type="text" class="input-line text-center w-full font-mono font-bold" />
                                         </td>
                                         <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <input v-model="editForm.box" type="number" class="input-line text-center w-full" placeholder="—" />
-                                        </td>
-                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <select v-model="editForm.concent" class="input-line w-full text-center font-bold">
-                                                <option value="">—</option>
-                                                <option value="G">G</option>
-                                                <option value="F">F</option>
-                                                <option value="C">C</option>
+                                            <select v-model="editForm.reception_id" class="input-line w-full text-center text-[11px]">
+                                                <option :value="null">—</option>
+                                                <option v-for="r in props.receptions" :key="r.id" :value="r.id">
+                                                    {{ r.fiche_number ?? r.id }}
+                                                </option>
                                             </select>
                                         </td>
                                         <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <select v-model="editForm.parcelle_id" class="input-line w-full text-center font-bold">
+                                            <select v-model="editForm.parcelle_id" :disabled="!!editForm.reception_id" class="input-line w-full text-center font-bold disabled:opacity-60 disabled:cursor-not-allowed">
                                                 <option :value="null">—</option>
                                                 <option v-for="p in props.parcelles" :key="p.id" :value="p.id">
                                                     {{ p.num }}
@@ -596,8 +649,15 @@ const executeDelete = () => {
                                             {{ editForm.code || '—' }}
                                         </td>
                                         <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <input v-model="editForm.caissette" type="number" class="input-line text-center w-full" placeholder="—" />
+                                            <input v-model="editForm.caissette" type="number" :disabled="!!editForm.reception_id" class="input-line text-center w-full disabled:opacity-60 disabled:cursor-not-allowed" placeholder="—" />
                                         </td>
+                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+                                            <input v-model="editForm.box" type="text" class="input-line text-center w-full" placeholder="—" />
+                                        </td>
+                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+                                            <input v-model="editForm.concent" type="text" class="input-line text-center w-full" placeholder="—" />
+                                        </td>
+                                        
                                         <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
                                             <input v-model="editForm.soufre" type="number" class="input-line text-center w-full" placeholder="—" />
                                         </td>
@@ -618,7 +678,8 @@ const executeDelete = () => {
                                         <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30 text-[11px] opacity-40 italic">
                                             Inchangé
                                         </td>
-                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+
+                                        <td class="px-2 py-2 text-center border-r border-[var(--sidebar-green)]/30">
                                             <input type="checkbox" v-model="editForm.controle_raqt" class="w-4 h-4 rounded text-[var(--brand-green)] focus:ring-[var(--brand-green)]" />
                                         </td>
                                         <td class="px-2 py-2 text-center">

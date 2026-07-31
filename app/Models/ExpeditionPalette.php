@@ -12,4 +12,10 @@ class ExpeditionPalette extends Model
     {
         return $this->belongsTo(Paletisation::class);
     }
+
+    public function expedition()
+    {
+        return $this->belongsTo(Expedition::class);
+    }
+
 }

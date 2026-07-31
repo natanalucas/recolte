@@ -12,6 +12,7 @@ use App\Models\Parcelle;
 use App\Models\Enqueteur;
 use App\Models\CodeTraca;
 use App\Models\TypeCertification;
+use App\Models\FicheReception;
 use Illuminate\Support\Facades\DB;
 
 class SoufrageController extends Controller
@@ -32,11 +33,19 @@ class SoufrageController extends Controller
             'operateurs' => Operateur::orderBy('nom')->get(['id', 'nom', 'prenom', 'travail']),
             'raqts'      => Raqt::orderBy('nom')->get(['id', 'nom', 'prenom']),
             // Note : Chargez aussi la relation 'parcelle' dans votre modèle Soufrage si nécessaire
-            'soufrages' => Soufrage::with(['operateur', 'raqt', 'parcelle']) 
+            'soufrages' => Soufrage::with(['operateur', 'raqt', 'parcelle', 'reception']) 
                             ->whereYear('created_at', now()->year)
                             ->orderByDesc('created_at')
                             ->paginate(20),
             'parcelles'  => Parcelle::orderBy('num')->get(['id', 'num', 'localisation']),
+            'receptions' => FicheReception::orderBy('id')
+                ->get(['id', 'fiche_number', 'caissette', 'parcelle_id'])
+                ->map(fn($r) => [
+                    'id'              => $r->id,
+                    'fiche_number'    => $r->fiche_number,
+                    'caissette_total' => $r->caissette,       // champ direct
+                    'parcelle_id'     => $r->parcelle_id,     // champ direct
+                ]),
         ]);
     }
 
@@ -94,6 +103,7 @@ class SoufrageController extends Controller
             'operateur_id'    => 'nullable|exists:operateurs,id',
             'controle_raqt'   => 'nullable|boolean',
             'enqueteur_id'    => 'nullable|exists:enqueteurs,id', // Ajouté
+            'reception_id'    => 'nullable|exists:fiche_receptions,id',
         ]);
 
         $parcelleId = $validatedData['parcelle_id'] ?? $soufrage->parcelle_id;

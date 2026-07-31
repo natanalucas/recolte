@@ -29,4 +29,9 @@ class Producteur extends Model
     {
         return $this->hasMany(DatesControle::class);
     }
+
+    public function receptionLignes()
+    {
+        return $this->hasManyThrough(ReceptionLigne::class, Parcelle::class, 'producteur_id', 'parcelle_id');
+    }
 }

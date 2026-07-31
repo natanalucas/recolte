@@ -20,7 +20,8 @@ import {
     UserCheck,
     BadgeCheck,
     Award,
-    Users
+    Users,
+    ChartColumn
 } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -68,6 +69,11 @@ const mainNavItems: NavItem[] = [
                 title: 'Expédition',
                 href: '/expeditions',
                 icon: Package, // Icône de vent/gaz pour le soufrage
+            },
+            {
+                title: 'Statistiques',
+                href: '/statistiques/litchi',
+                icon: ChartColumn, // Icône de vent/gaz pour le soufrage
             },
         ],
     },

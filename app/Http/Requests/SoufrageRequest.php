@@ -29,6 +29,7 @@ class SoufrageRequest extends FormRequest
             'operateur_id'    => 'nullable|exists:operateurs,id',
             'controle_raqt'   => 'boolean',
             'enqueteur_id'    => 'nullable|exists:enqueteurs,id', // Modifié
+            'reception_id'    => 'nullable|exists:fiche_receptions,id'
         ];
     }
 

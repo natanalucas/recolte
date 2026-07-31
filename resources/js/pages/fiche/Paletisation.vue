@@ -6,10 +6,7 @@ import type { BreadcrumbItem } from '@/types';
 import HeaderFiche from './HeaderFiche.vue';
 import { Trash2, Plus, Loader2, AlertCircle, Pencil, X, Check, PackageOpen } from 'lucide-vue-next';
 
-const breadcrumbs: BreadcrumbItem[] = [
-    // { title: 'Fiche Traçabilité', href: '#' },
-    // { title: 'Palettisation', href: '#' }
-];
+const breadcrumbs: BreadcrumbItem[] = [];
 
 // ---------------------------------------------------------------------------
 // 1. Types — alignés sur les modèles Eloquent Paletisation / PaletisationLot
@@ -38,7 +35,7 @@ interface PaletisationLotApi {
 
 interface PaletisationApi {
     id: number;
-    enqueteur_id?: number | null; // 👈 Ajouté ici pour éviter l'erreur dans fromApi
+    enqueteur_id?: number | null;
     num_palette: string | null;
     type_carton: string | null;
     type_certification_id: number | null;
@@ -76,7 +73,6 @@ interface PaletisationFormState {
     lots: [LotForm, LotForm, LotForm];
 }
 
-// 📦 UNE SEULE DÉCLARATION ICI (La duplication a été supprimée)
 interface PaletisationRow extends PaletisationFormState {
     id: number;
 }
@@ -88,9 +84,6 @@ function blankLots(): [LotForm, LotForm, LotForm] {
     return [1, 2, 3].map((n) => ({ lot_number: n, code_traca_id: null, nb_cartons: null })) as [LotForm, LotForm, LotForm];
 }
 
-// Laravel renvoie parfois les colonnes numériques sous forme de chaîne en JSON
-// (ex: "7" au lieu de 7). Sans cette conversion, `sum + nb_cartons` fait une
-// concaténation de texte ("7"+"7"+"7" = "777") au lieu d'une addition.
 function toNumber(value: unknown): number {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
@@ -98,7 +91,7 @@ function toNumber(value: unknown): number {
 
 function createBlankForm(): PaletisationFormState {
     return {
-        enqueteurId: null, // 👈 null au lieu de ''
+        enqueteurId: null,
         num_palette: '',
         type_carton: "5.5",
         type_certification_id: props.typeCertifications[0]?.id ?? null,
@@ -142,8 +135,6 @@ const cartonsByCode = computed(() => {
 });
 
 function onLotCodeChange(lot: LotForm) {
-    // Pré-remplit le nb. de cartons avec la valeur déjà triée pour ce code,
-    // l'agent peut toujours corriger la valeur manuellement ensuite.
     if (lot.code_traca_id && !lot.nb_cartons) {
         const suggested = cartonsByCode.value.get(lot.code_traca_id);
         if (suggested !== undefined) lot.nb_cartons = suggested;
@@ -151,11 +142,48 @@ function onLotCodeChange(lot: LotForm) {
 }
 
 // ---------------------------------------------------------------------------
+// 3bis. Filtrage des codes de traçabilité (utilisés ailleurs + dans le formulaire)
+// ---------------------------------------------------------------------------
+const editingId = ref<number | null>(null);
+
+// Codes déjà utilisés dans d'autres palettes (hors palette en cours d'édition)
+const usedCodeTracaIds = computed(() => {
+    const usedIds = new Set<number>();
+    for (const pal of props.paletisations) {
+        // Si on est en édition, ignorer la palette courante
+        if (editingId.value && pal.id === editingId.value) continue;
+        for (const lot of pal.lots) {
+            if (lot.code_traca_id) {
+                usedIds.add(lot.code_traca_id);
+            }
+        }
+    }
+    return usedIds;
+});
+
+function availableCodesForLot(idx: number): CodeTracaOption[] {
+    // Codes sélectionnés dans les autres lots du formulaire (pour éviter les doublons internes)
+    const selectedOtherCodes = form.lots
+        .map((l, i) => (i !== idx ? l.code_traca_id : null))
+        .filter((id): id is number => id !== null && id !== undefined);
+
+    const currentCode = form.lots[idx].code_traca_id;
+    const usedCodes = usedCodeTracaIds.value;
+
+    return props.souragesCodes.filter((c) => {
+        // 1. Exclure les codes déjà utilisés dans d'autres palettes (sauf le code courant)
+        if (usedCodes.has(c.id) && c.id !== currentCode) return false;
+        // 2. Exclure les codes déjà pris par un autre lot dans le formulaire (sauf le code courant)
+        if (selectedOtherCodes.includes(c.id) && c.id !== currentCode) return false;
+        return true;
+    });
+}
+
+// ---------------------------------------------------------------------------
 // 4. Modal — ajout / modification
 // ---------------------------------------------------------------------------
 const isModalOpen = ref(false);
 const modalMode = ref<'create' | 'edit'>('create');
-const editingId = ref<number | null>(null);
 const form = reactive<PaletisationFormState>(createBlankForm());
 const formSaving = ref(false);
 const formError = ref<string | null>(null);
@@ -229,8 +257,6 @@ function submitForm() {
         const wasCreate = modalMode.value === 'create';
         rows.value = list.map(fromApi);
         isModalOpen.value = false;
-        // La nouvelle palette se trouve à la fin de la liste (cf. controller),
-        // on bascule donc sur la dernière page pour qu'elle soit visible.
         if (wasCreate) currentPage.value = pageCount.value;
     };
     const onError = (errors: Record<string, string>) => {
@@ -248,7 +274,7 @@ function submitForm() {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Suppression (confirmation inline, sans popup natif)
+// 5. Suppression (confirmation inline)
 // ---------------------------------------------------------------------------
 const confirmingDeleteId = ref<number | null>(null);
 const deletingId = ref<number | null>(null);
@@ -285,19 +311,15 @@ function confirmDelete(id: number) {
 // 6. Totaux & helpers d'affichage
 // ---------------------------------------------------------------------------
 const rowTotal = (row: PaletisationRow) => row.lots.reduce((sum, l) => sum + toNumber(l.nb_cartons), 0);
-// Le total général porte sur l'ensemble des palettes (pas seulement la page affichée).
 const grandTotal = computed(() => rows.value.reduce((sum, r) => sum + rowTotal(r), 0));
 
 // ---------------------------------------------------------------------------
-// 6bis. Pagination (côté client — la liste complète est déjà chargée via Inertia)
+// 6bis. Pagination côté client
 // ---------------------------------------------------------------------------
 const pageSize = ref(10);
 const currentPage = ref(1);
-
 const pageCount = computed(() => Math.max(1, Math.ceil(rows.value.length / pageSize.value)));
 
-// Si le nombre de lignes change (ajout/suppression) et qu'on se retrouve sur
-// une page qui n'existe plus, on revient à la dernière page disponible.
 watch([() => rows.value.length, pageSize], () => {
     if (currentPage.value > pageCount.value) currentPage.value = pageCount.value;
 });
@@ -307,7 +329,6 @@ const paginatedRows = computed(() => {
     return rows.value.slice(start, start + pageSize.value);
 });
 
-// Plage affichée dans le pied de tableau, ex. "11–20 sur 47"
 const paginationRangeLabel = computed(() => {
     if (rows.value.length === 0) return '0–0 sur 0';
     const start = (currentPage.value - 1) * pageSize.value + 1;
@@ -327,8 +348,6 @@ function goToNextPage() {
     goToPage(currentPage.value + 1);
 }
 
-// Liste compacte de numéros de page à afficher (avec "…" pour les trous),
-// pour éviter d'afficher 50 boutons si la liste est longue.
 const paginationItems = computed<(number | '…')[]>(() => {
     const total = pageCount.value;
     const current = currentPage.value;
@@ -380,11 +399,11 @@ function formatDateTime(value: string) {
 
             <div class="flex flex-wrap justify-between items-center gap-4 py-4 mt-2">
                 <div class="flex gap-4 text-xs font-bold">
-                <div v-for="cert in typeCertifications" :key="cert.id" class="flex items-center gap-2 bg-[var(--card-alt)] px-3 py-1.5 rounded-lg border border-[var(--sidebar-border)]">
-                    <span class="bg-[var(--brand-green)] text-white px-1.5 py-0.5 rounded text-[10px]">{{ cert.nom[0] }}</span>
-                    <span>{{ cert.nom }}</span>
+                    <div v-for="cert in typeCertifications" :key="cert.id" class="flex items-center gap-2 bg-[var(--card-alt)] px-3 py-1.5 rounded-lg border border-[var(--sidebar-border)]">
+                        <span class="bg-[var(--brand-green)] text-white px-1.5 py-0.5 rounded text-[10px]">{{ cert.nom[0] }}</span>
+                        <span>{{ cert.nom }}</span>
+                    </div>
                 </div>
-            </div>
 
                 <button
                     @click="openCreateModal"
@@ -570,16 +589,16 @@ function formatDateTime(value: string) {
                         </p>
 
                         <div class="space-y-1.5">
-                        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
-                            Enquêteur Responsable *
-                        </label>
-                        <select v-model="form.enqueteurId" class="input-line w-full">
-                            <option :value="null">— choisir un enquêteur —</option>
-                            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
-                                {{ e.prenom }} {{ e.nom }}
-                            </option>
-                        </select>
-                    </div>
+                            <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                                Enquêteur Responsable *
+                            </label>
+                            <select v-model="form.enqueteurId" class="input-line w-full">
+                                <option :value="null">— choisir un enquêteur —</option>
+                                <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                                    {{ e.prenom }} {{ e.nom }}
+                                </option>
+                            </select>
+                        </div>
 
                         <div>
                             <label class="block text-[10px] font-black uppercase tracking-wide mb-1.5 text-[var(--text)]/60">N° Palette</label>
@@ -614,17 +633,19 @@ function formatDateTime(value: string) {
                         </div>
 
                         <div class="grid grid-cols-2 gap-4">
-                            <div>
+                            <div @click="$event.currentTarget.querySelector('input').showPicker()">
                                 <label class="block text-[10px] font-black uppercase tracking-wide mb-1.5 text-[var(--text)]/60">Début</label>
                                 <input
+                                    @input="(e) => (e.target as HTMLInputElement).blur()"
                                     type="datetime-local"
                                     v-model="form.debut"
                                     class="w-full bg-[var(--card-alt)] border border-[var(--sidebar-border)] rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-[var(--brand-green)] text-black dark:text-white"
                                 >
                             </div>
-                            <div>
+                            <div @click="$event.currentTarget.querySelector('input').showPicker()">
                                 <label class="block text-[10px] font-black uppercase tracking-wide mb-1.5 text-[var(--text)]/60">Fin</label>
                                 <input
+                                    @input="(e) => (e.target as HTMLInputElement).blur()"
                                     type="datetime-local"
                                     v-model="form.fin"
                                     class="w-full bg-[var(--card-alt)] border border-[var(--sidebar-border)] rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-[var(--brand-green)] text-black dark:text-white"
@@ -636,7 +657,7 @@ function formatDateTime(value: string) {
                             <label class="block text-[10px] font-black uppercase tracking-wide mb-2 text-[var(--text)]/60">Lots</label>
                             <div class="space-y-2">
                                 <div
-                                    v-for="lot in form.lots"
+                                    v-for="(lot, idx) in form.lots"
                                     :key="lot.lot_number"
                                     class="grid grid-cols-[auto_1fr_120px] items-center gap-3 bg-[var(--card-alt)] rounded-lg px-3 py-2 border border-[var(--sidebar-border)]"
                                 >
@@ -647,7 +668,13 @@ function formatDateTime(value: string) {
                                         class="bg-transparent text-[12px] font-mono uppercase outline-none border-b border-[var(--sidebar-border)] focus:border-[var(--brand-green)] py-1"
                                     >
                                         <option :value="null">— Code Traça —</option>
-                                        <option v-for="c in souragesCodes" :key="c.id" :value="c.id">{{ c.code }}</option>
+                                        <option
+                                            v-for="c in availableCodesForLot(idx)"
+                                            :key="c.id"
+                                            :value="c.id"
+                                        >
+                                            {{ c.code }}
+                                        </option>
                                     </select>
                                     <input
                                         disabled

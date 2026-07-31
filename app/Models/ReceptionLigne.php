@@ -12,9 +12,15 @@ class ReceptionLigne extends Model
         'voiture',
         'commune',
         'caissette',             // nombre saisi
+        'pourcentage_dechet',    // % de déchet constaté
         'collecte',
         'depart_champ',
         'retour_station',
+    ];
+
+    protected $casts = [
+        'depart_champ' => 'datetime',
+        'retour_station' => 'datetime',
     ];
 
     public function parcelle()

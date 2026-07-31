@@ -10,24 +10,29 @@ use App\Models\TypeCertification;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\Enqueteur;
+use App\Models\ExpeditionPalette;
 
 class ExpeditionController extends Controller
 {
     public function index()
     {
+        // Récupérer les IDs des palettes déjà utilisées dans une expédition (sauf si on veut les exclure)
+        $usedPaletteIds = ExpeditionPalette::pluck('paletisation_id')->unique()->toArray();
+
         return Inertia::render('fiche/Expedition', [
             'enqueteurs' => Enqueteur::with('user')
-            ->where('is_active', true)
-            ->get()
-            ->map(fn($item) => [
-                'id'     => $item->id,
-                'nom'    => $item->user->lastname,
-                'prenom' => $item->user->firstname,
-                'poste'  => $item->poste,
-            ]),
+                ->where('is_active', true)
+                ->get()
+                ->map(fn($item) => [
+                    'id'     => $item->id,
+                    'nom'    => $item->user->lastname,
+                    'prenom' => $item->user->firstname,
+                    'poste'  => $item->poste,
+                ]),
             'expeditions' => Expedition::with('palettes.paletisation.typeCertification')->latest()->get(),
             'availablePalettes' => Paletisation::with('typeCertification')->get(),
             'certifications' => TypeCertification::select('id', 'nom')->get(),
+            'usedPaletteIds' => $usedPaletteIds, // Ajout
         ]);
     }
 
@@ -65,14 +70,26 @@ class ExpeditionController extends Controller
     public function update(Request $request, Expedition $expedition)
     {
         $validated = $request->validate([
-            // ... (mêmes validations que store)
-            'palettes' => 'required|array|min:1',
+            'enqueteur_id'         => 'nullable|exists:enqueteurs,id',
+            'fiche_number'         => 'nullable|string|max:255',
+            'conteneur'            => 'nullable|string',
+            'immatriculation'      => 'nullable|string',
+            'proprete_conteneur'   => 'required|in:propre,sale',
+            'proprete_camion'      => 'required|in:propre,sale',
+            'debut_empotage'       => 'nullable|date',
+            'fin_empotage'         => 'nullable|date',
+            'depart_station'       => 'nullable|date',
+            'arrivee_port'         => 'nullable|date',
+            'bateau'               => 'nullable|string',
+            'bon_livraison'        => 'nullable|string',
+            'observations'         => 'nullable|string',
+            'palettes'             => 'required|array|min:1',
             'palettes.*.paletisation_id' => 'required|exists:paletisations,id',
         ]);
 
         $expedition->update($validated);
-        
-        // Synchronisation simple des palettes associées
+
+        // Synchronisation des palettes
         $expedition->palettes()->delete();
         foreach ($validated['palettes'] as $palette) {
             $expedition->palettes()->create([

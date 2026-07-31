@@ -22,7 +22,6 @@ class Paletisation extends Model
         'debut' => 'datetime',
         'fin'   => 'datetime',
     ];
-
     /**
      * Les 3 lots rattachés à cette palette, toujours triés par numéro de lot.
      */
@@ -40,4 +39,14 @@ class Paletisation extends Model
     {
         return $this->belongsTo(User::class, 'enqueteur_id');
     }
+
+
+    public function expeditionPalettes()
+    {
+        return $this->hasMany(ExpeditionPalette::class);
+    }
+
+
+
+
 }

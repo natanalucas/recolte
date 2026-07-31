@@ -5,8 +5,8 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import HeaderFiche from './HeaderFiche.vue';
 import {
-    Trash2, Plus, Save, CheckCircle2, ChevronDown,
-    ChevronUp, Pencil, X, AlertTriangle, Weight
+    Trash2, Plus, Save, CheckCircle2,
+    Pencil, X, AlertTriangle, Weight
 } from 'lucide-vue-next';
 
 const breadcrumbs: BreadcrumbItem[] = [];
@@ -15,34 +15,20 @@ const breadcrumbs: BreadcrumbItem[] = [];
 
 interface Parcelle { id: number; num: string; }
 
-interface ReceptionLigne {
-    _key:           number;
-    open:           boolean;      // accordéon ouvert/fermé
-    parcelle_id:    number | null;
-    voiture:        string;
-    commune:        string;
-    caissette:      number | null;
-    collecte:       string;
-    depart_champ:   string;
-    retour_station: string;
-}
-
 interface FicheReception {
     id:                  number;
     enqueteur_id:        number | null;
     fiche_number:        string | null;
     poids_par_caissette: number | null;
-    lignes: {
-        id:              number;
-        parcelle_id:     number | null;
-        parcelle:        { id: number; num: string } | null;
-        voiture:         string | null;
-        commune:         string | null;
-        caissette:       number | null;
-        collecte:        string | null;
-        depart_champ:    string | null;
-        retour_station:  string | null;
-    }[];
+    parcelle_id:         number | null;
+    parcelle:            { id: number; num: string } | null;
+    voiture:             string | null;
+    commune:             string | null;
+    caissette:           number | null;
+    pourcentage_dechet:  number | null;
+    collecte:            string | null;
+    depart_champ:        string | null;
+    retour_station:      string | null;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -61,13 +47,11 @@ const props = defineProps<{
     enqueteurs: { id: number; nom: string; prenom: string; poste: string }[];
 }>();
 
-// ─── Poids global (hors modal) ────────────────────────────────────────────────
+// ─── Poids global ─────────────────────────────────────────────────────────────
 
-const enqueteurId         = ref<number | null>(null);
-const ficheNumber         = ref('');
-const poidsGlobal         = ref<number | null>(props.poids_par_caissette || null);
-const poidsSaving         = ref(false);
-const poidsSuccess        = ref(false);
+const poidsGlobal = ref<number | null>(props.poids_par_caissette || null);
+const poidsSaving = ref(false);
+const poidsSuccess = ref(false);
 
 const savePoids = () => {
     poidsSaving.value  = true;
@@ -85,89 +69,67 @@ const savePoids = () => {
 
 const showModal      = ref(false);
 const editingFicheId = ref<number | null>(null);
-const modalEnqueteurId = ref<number | null>(null); // <-- Remplacé ici
-const modalFicheNum  = ref('');
-const modalSaving    = ref(false);
-const modalError     = ref<string | null>(null);
-const modalSuccess   = ref(false);
-
-// ─── Lignes (accordéon) ───────────────────────────────────────────────────────
-
-const makeRow = (): ReceptionLigne => ({
-    _key:           Date.now() + Math.random(),
-    open:           true,
-    parcelle_id:    null,
-    voiture:        '',
-    commune:        '',
-    caissette:      null,
-    collecte:       new Date().toISOString().slice(0, 16),
-    depart_champ:   '',
-    retour_station: '',
+const form = reactive({
+    enqueteur_id:        null as number | null,
+    parcelle_id:         null as number | null,
+    voiture:             '',
+    commune:             '',
+    caissette:           null as number | null,
+    pourcentage_dechet:  null as number | null,
+    collecte:            new Date().toISOString().slice(0, 16),
+    depart_champ:        '',
+    retour_station:      '',
 });
 
-const modalRows = reactive<ReceptionLigne[]>([makeRow()]);
+const modalSaving  = ref(false);
+const modalError   = ref<string | null>(null);
+const modalSuccess = ref(false);
 
-const addModalRow    = () => modalRows.push(makeRow());
-const removeModalRow = (i: number) => { if (modalRows.length > 1) modalRows.splice(i, 1); };
-const toggleRow      = (row: ReceptionLigne) => { row.open = !row.open; };
+// ─── Calcul des kg ──────────────────────────────────────────────────────────
 
-// Résumé d'une ligne pour l'affichage condensé
-const rowSummary = (row: ReceptionLigne) => {
-    const num = props.parcelles.find(p => p.id === row.parcelle_id)?.num ?? '—';
-    const kg  = row.caissette && poidsGlobal.value
-        ? (row.caissette * poidsGlobal.value).toFixed(2) + ' kg'
-        : null;
-    return { num, kg };
-};
-
-// Total de la fiche en cours
-const totalCaissettes = computed(() =>
-    modalRows.reduce((s, r) => s + (r.caissette ?? 0), 0)
-);
-const totalKg = computed(() =>
-    poidsGlobal.value
-        ? (totalCaissettes.value * poidsGlobal.value).toFixed(2)
-        : null
-);
-
-// Calcul kg pour une ligne
-const ligneKg = (caissette: number | null): string | null =>
-    caissette && poidsGlobal.value
-        ? (caissette * poidsGlobal.value).toFixed(2)
-        : null;
+const quantiteKg = computed(() => {
+    if (form.caissette && poidsGlobal.value) {
+        return (form.caissette * poidsGlobal.value).toFixed(2);
+    }
+    return null;
+});
 
 // ─── Ouverture modal ──────────────────────────────────────────────────────────
 
 const openAddModal = () => {
     editingFicheId.value = null;
-    modalEnqueteurId.value  = enqueteurId.value; // <-- Remplacé ici
-    modalFicheNum.value  = ficheNumber.value;
-    modalError.value     = null;
-    modalSuccess.value   = false;
-    modalRows.splice(0, modalRows.length, makeRow());
-    showModal.value      = true;
+    Object.assign(form, {
+        enqueteur_id:        null,
+        parcelle_id:         null,
+        voiture:             '',
+        commune:             '',
+        caissette:           null,
+        pourcentage_dechet:  null,
+        collecte:            new Date().toISOString().slice(0, 16),
+        depart_champ:        '',
+        retour_station:      '',
+    });
+    modalError.value   = null;
+    modalSuccess.value = false;
+    showModal.value    = true;
 };
 
 const openEditModal = (fiche: FicheReception) => {
     editingFicheId.value = fiche.id;
-    modalEnqueteurId.value = fiche.enqueteur_id ?? null; 
-    modalFicheNum.value  = fiche.fiche_number ?? '';
-    modalError.value     = null;
-    modalSuccess.value   = false;
-
-    const lignes = fiche.lignes.map(l => ({
-        _key:           Date.now() + Math.random(),
-        open:           false,        // fermées par défaut en mode édition
-        parcelle_id:    l.parcelle_id,
-        voiture:        l.voiture        ?? '',
-        commune:        l.commune        ?? '',
-        caissette:      l.caissette,
-        collecte:       l.collecte?.slice(0, 16)       ?? '',
-        depart_champ:   l.depart_champ?.slice(0, 16)   ?? '',
-        retour_station: l.retour_station?.slice(0, 16) ?? '',
-    }));
-    modalRows.splice(0, modalRows.length, ...lignes);
-    showModal.value = true;
+    Object.assign(form, {
+        enqueteur_id:        fiche.enqueteur_id ?? null,
+        parcelle_id:         fiche.parcelle_id ?? null,
+        voiture:             fiche.voiture ?? '',
+        commune:             fiche.commune ?? '',
+        caissette:           fiche.caissette ?? null,
+        pourcentage_dechet:  fiche.pourcentage_dechet ?? null,
+        collecte:            fiche.collecte?.slice(0, 16) ?? '',
+        depart_champ:        fiche.depart_champ?.slice(0, 16) ?? '',
+        retour_station:      fiche.retour_station?.slice(0, 16) ?? '',
+    });
+    modalError.value   = null;
+    modalSuccess.value = false;
+    showModal.value    = true;
 };
 
 const closeModal = () => {
@@ -184,10 +146,8 @@ const submitModal = () => {
     modalSuccess.value = false;
 
     const payload = {
-        enqueteur_id:        modalEnqueteurId.value, 
-        fiche_number:        modalFicheNum.value,
+        ...form,
         poids_par_caissette: poidsGlobal.value,
-        lignes: modalRows.map(({ _key, open, ...r }) => r),
     };
 
     const options = {
@@ -229,19 +189,17 @@ const executeDelete = () => {
 
 const fmtDate = (d: string | null) => {
     if (!d) return '—';
-    return new Date(d).toLocaleString('fr-FR', { 
-        day: '2-digit', 
-        month: '2-digit', 
+    return new Date(d).toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
         year: 'numeric',
-        hour: '2-digit', 
-        minute: '2-digit' 
+        hour: '2-digit',
+        minute: '2-digit'
     });
 };
 
-const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
-    ligne.parcelle?.num
-    ?? props.parcelles.find(p => p.id === ligne.parcelle_id)?.num
-    ?? '—';
+const parcelleNum = (fiche: FicheReception) =>
+    fiche.parcelle?.num ?? props.parcelles.find(p => p.id === fiche.parcelle_id)?.num ?? '—';
 </script>
 
 <template>
@@ -250,13 +208,13 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="p-6 space-y-5 bg-[var(--background)] text-[var(--text)] font-sans">
 
-            <HeaderFiche 
-                title="Réception" 
-                v-model:enqueteurId="enqueteurId" 
+            <HeaderFiche
+                title="Réception"
+                v-model:enqueteurId="enqueteurId"
                 :enqueteurs="props.enqueteurs"
             />
 
-            <!-- ══ POIDS GLOBAL — hors modal ════════════════════════════════ -->
+            <!-- ══ POIDS GLOBAL ────────────────────────────────────────────── -->
             <div class="flex items-center gap-4 bg-[var(--card)]
                         border border-[var(--sidebar-border)] rounded-2xl px-5 py-3 w-fit shadow-sm">
                 <Weight class="w-5 h-5 text-[var(--brand-orange)] shrink-0" />
@@ -274,9 +232,6 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                     <option :value="20">20</option>
                 </select>
                 <span class="text-[12px] font-bold">kg</span>
-                <!-- <span class="text-[11px] text-gray-400 italic hidden sm:block">
-                    mémorisé pour toutes les fiches
-                </span> -->
                 <button @click="savePoids" :disabled="poidsSaving"
                     class="h-8 px-4 bg-[var(--brand-green)] text-white rounded-xl
                            text-[11px] font-black uppercase tracking-widest
@@ -288,7 +243,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                 </button>
             </div>
 
-            <!-- ══ EN-TÊTE LISTE ════════════════════════════════════════════ -->
+            <!-- ══ EN-TÊTE LISTE ───────────────────────────────────────────── -->
             <div class="flex items-center justify-between">
                 <h2 class="text-[13px] font-black uppercase tracking-widest flex items-center gap-2">
                     <ChevronDown class="w-4 h-4 text-[var(--brand-green)]" />
@@ -307,87 +262,112 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                 </button>
             </div>
 
-            <!-- ══ TABLEAU LISTE ════════════════════════════════════════════ -->
+            <!-- ══ TABLEAU DES FICHES ──────────────────────────────────────── -->
             <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)]
                         bg-[var(--card)] shadow">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse min-w-[1100px]">
+                    <table class="w-full text-left border-collapse min-w-[1400px]">
                         <thead>
                             <tr class="bg-[var(--brand-green)]/80 text-white
                                        text-[10px] font-black uppercase tracking-wider">
-                                <th class="px-3 py-3 text-center border-r border-white/10">N° Parcelle</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Qtté Caissette livré</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">N° Fiche</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Parcelle</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Caissettes</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10 bg-[var(--brand-green)]/60">Quantité (kg)</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">N° Voiture</th>
-                                <th class="px-3 py-3 text-route border-r border-white/10">Commune et district</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Déchet (%)</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Voiture</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Commune</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Collecte</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Départ champ</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Retour à la station</th>
-                                
+                                <th class="px-3 py-3 text-center border-r border-white/10">Retour station</th>
                                 <th class="px-3 py-3 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-[var(--sidebar-border)]">
 
                             <tr v-if="props.fiches.total === 0">
-                                <td colspan="9"
+                                <td colspan="11"
                                     class="py-12 text-center text-[12px] font-bold opacity-30 uppercase tracking-widest">
                                     Aucune fiche enregistrée
                                 </td>
                             </tr>
 
-                            <template v-for="fiche in props.fiches.data" :key="fiche.id">
-                                <tr v-for="(ligne, li) in fiche.lignes" :key="ligne.id"
-                                    class="hover:bg-[var(--brand-green)]/5 transition-colors text-[12px]">
+                            <tr v-for="fiche in props.fiches.data" :key="fiche.id"
+                                class="hover:bg-[var(--brand-green)]/5 transition-colors text-[12px]">
 
-                                    <td class="px-3 py-2 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">
-                                        {{ parcelleNum(ligne) }}
-                                    </td>
-                                    <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">
-                                        {{ ligne.caissette ?? '—' }}
-                                    </td>
-                                    <td class="px-3 py-2 text-center bg-[var(--brand-green)]/5 border-r border-[var(--sidebar-border)]/30">
-                                        <span class="font-black"
-                                            :class="ligne.caissette && (fiche.poids_par_caissette ?? poidsGlobal)
-                                                ? 'text-[var(--brand-green)]' : 'opacity-30'">
-                                            {{
-                                                ligne.caissette && (fiche.poids_par_caissette ?? poidsGlobal)
-                                                    ? (ligne.caissette *  poidsGlobal).toFixed(2) + ' kg'
-                                                    : '—'
-                                            }}
-                                        </span>
-                                    </td>
-                                    <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">{{ ligne.voiture || '—' }}</td>
-                                    <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">{{ ligne.commune || '—' }}</td>
-                                    <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">{{ fmtDate(ligne.collecte) }}</td>
-                                    <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">{{ fmtDate(ligne.depart_champ) }}</td>
-                                    <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">{{ fmtDate(ligne.retour_station) }}</td>
+                                <td class="px-3 py-2 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">
+                                    {{ fiche.fiche_number ?? '#' + fiche.id }}
+                                </td>
 
-                                    <!-- Actions : rowspan sur la 1ère sous-ligne -->
-                                    <td v-if="li === 0"
-                                        :rowspan="fiche.lignes.length"
-                                        class="px-3 py-2 text-center align-middle">
-                                        <div class="flex items-center justify-center gap-1.5">
-                                            <button @click="openEditModal(fiche)"
-                                                class="inline-flex items-center gap-1 px-3 py-1 rounded-lg
-                                                       border border-[var(--sidebar-border)] text-[10px] font-black uppercase
-                                                       hover:border-[var(--brand-green)] hover:text-[var(--brand-green)] transition-all">
-                                                <Pencil class="w-3 h-3" /> Modifier
-                                            </button>
-                                            <button @click="confirmDelete(fiche)"
-                                                class="p-1.5 rounded-lg border border-[var(--sidebar-border)]
-                                                       hover:border-red-500 hover:text-red-500 transition-all">
-                                                <Trash2 class="w-3 h-3" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </template>
+                                <td class="px-3 py-2 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">
+                                    {{ parcelleNum(fiche) }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+                                    {{ fiche.caissette ?? '—' }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center bg-[var(--brand-orange)]/5 border-r border-[var(--sidebar-border)]/30">
+                                    <span class="font-black"
+                                        :class="fiche.caissette && (fiche.poids_par_caissette ?? poidsGlobal)
+                                            ? 'text-[var(--brand-orange)]' : 'opacity-30'">
+                                        {{
+                                            fiche.caissette && (fiche.poids_par_caissette ?? poidsGlobal)
+                                                ? (fiche.caissette * (fiche.poids_par_caissette ?? poidsGlobal)).toFixed(2) + ' kg'
+                                                : '—'
+                                        }}
+                                    </span>
+                                </td>
+
+                                <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+                                    <span v-if="fiche.pourcentage_dechet" class="font-black text-red-500">
+                                        {{ fiche.pourcentage_dechet }}%
+                                    </span>
+                                    <span v-else>—</span>
+                                </td>
+
+                                <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+                                    {{ fiche.voiture || '—' }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+                                    {{ fiche.commune || '—' }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
+                                    {{ fmtDate(fiche.collecte) }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
+                                    {{ fmtDate(fiche.depart_champ) }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
+                                    {{ fmtDate(fiche.retour_station) }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center">
+                                    <div class="flex items-center justify-center gap-1.5">
+                                        <button @click="openEditModal(fiche)"
+                                            class="inline-flex items-center gap-1 px-3 py-1 rounded-lg
+                                                   border border-[var(--sidebar-border)] text-[10px] font-black uppercase
+                                                   hover:border-[var(--brand-green)] hover:text-[var(--brand-green)] transition-all">
+                                            <Pencil class="w-3 h-3" /> Modifier
+                                        </button>
+                                        <button @click="confirmDelete(fiche)"
+                                            class="p-1.5 rounded-lg border border-[var(--sidebar-border)]
+                                                   hover:border-red-500 hover:text-red-500 transition-all">
+                                            <Trash2 class="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-            <!-- ══ PAGINATION ══════════════════════════════════════════════ -->
+
+            <!-- ══ PAGINATION ────────────────────────────────────────────────── -->
             <div v-if="props.fiches.last_page > 1"
                 class="flex items-center justify-between pt-3">
 
@@ -420,7 +400,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
         </div>
 
         <!-- ════════════════════════════════════════════════════════════════
-             MODAL FORMULAIRE
+             MODAL FORMULAIRE (une seule ligne)
         ════════════════════════════════════════════════════════════════ -->
         <Teleport to="body">
             <Transition name="modal">
@@ -429,7 +409,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                            bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
                     @click.self="closeModal">
 
-                    <div class="bg-[var(--card)] rounded-2xl shadow-2xl w-full max-w-3xl
+                    <div class="bg-[var(--card)] rounded-2xl shadow-2xl w-full max-w-2xl
                                 border border-[var(--sidebar-border)] overflow-hidden my-8">
 
                         <!-- Header -->
@@ -446,239 +426,100 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
 
                         <div class="p-6 space-y-5">
 
-                            <!-- ── Bloc 1 : infos fiche ──────────────────── -->
-                            <!-- ── Bloc 1 : infos fiche ──────────────────── -->
-                            <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-2xl overflow-hidden">
-                                <div class="flex items-center gap-3 px-5 py-3
-                                            bg-[var(--brand-green)]/8 border-b border-[var(--sidebar-border)]">
-                                    <span class="w-6 h-6 rounded-full bg-[var(--brand-green)]/15
-                                                text-[var(--brand-green)] text-[11px] font-black
-                                                flex items-center justify-center shrink-0">1</span>
-                                    <span class="text-[12px] font-black uppercase tracking-widest">
-                                        Informations de la fiche
-                                    </span>
+                            <!-- ── Enquêteur ──────────────────────────────── -->
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-black uppercase tracking-wider">
+                                    Enquêteur
+                                </label>
+                                <select v-model="form.enqueteur_id" class="input-line w-full">
+                                    <option :value="null">— choisir —</option>
+                                    <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                                        {{ e.prenom }} {{ e.nom }}
+                                    </option>
+                                </select>
+                            </div>
+
+                            <!-- ── Champs de la fiche ────────────────────── -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        N° Parcelle
+                                    </label>
+                                    <select v-model="form.parcelle_id" class="input-line w-full">
+                                        <option :value="null">— choisir —</option>
+                                        <option v-for="p in props.parcelles" :key="p.id" :value="p.id">
+                                            {{ p.num }}
+                                        </option>
+                                    </select>
                                 </div>
-                                <div class="p-5 grid grid-cols-2 gap-4">
-                                    <div class="space-y-1.5">
-                                        <label class="text-[12px] font-black uppercase tracking-wider">
-                                            Enquêteur
-                                        </label>
-                                        <select v-model="modalEnqueteurId" class="input-line w-full">
-                                            <option :value="null">— choisir —</option>
-                                            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
-                                                {{ e.prenom }} {{ e.nom }}
-                                            </option>
-                                        </select>
+
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        N° Voiture
+                                    </label>
+                                    <input v-model="form.voiture" type="text" class="input-line w-full" />
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        Commune / District
+                                    </label>
+                                    <input v-model="form.commune" type="text" class="input-line w-full" />
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        Nb caissettes livrées
+                                    </label>
+                                    <input v-model="form.caissette" type="number" min="0" class="input-line w-full" />
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        Pourcentage du déchet
+                                    </label>
+                                    <div class="flex items-center gap-1">
+                                        <input v-model="form.pourcentage_dechet" type="number" min="0" max="100" step="0.01"
+                                               class="input-line w-full" />
+                                        <span class="text-[12px] font-bold">%</span>
                                     </div>
-                                    <!-- <div class="space-y-1.5">
-                                        <label class="text-[12px] font-black uppercase tracking-wider opacity-60">
-                                            N° fiche
-                                        </label>
-                                        <input v-model="modalFicheNum" type="text"
-                                            placeholder="ex: REC-2024-001"
-                                            class="input-line w-full" />
-                                    </div> -->
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        Quantité (kg) – calculée
+                                    </label>
+                                    <div class="flex items-center gap-2 h-10">
+                                        <span v-if="quantiteKg"
+                                            class="px-3 py-1.5 rounded-xl bg-[var(--brand-orange)]/10
+                                                   text-[var(--brand-orange)] text-[13px] font-black">
+                                            {{ quantiteKg }} kg
+                                        </span>
+                                        <span v-else class="text-[12px] font-bold">—</span>
+                                        <span v-if="form.caissette && poidsGlobal" class="text-[10px]">
+                                            {{ form.caissette }} × {{ poidsGlobal }}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 
-                            <!-- ── Bloc 2 : lignes de réception ─────────── -->
-                            <div class="bg-[var(--card)] border border-[var(--sidebar-border)]
-                                        rounded-2xl overflow-hidden">
-                                <div class="flex items-center gap-3 px-5 py-3
-                                            bg-[var(--brand-green)]/8 border-b border-[var(--sidebar-border)]">
-                                    <span class="w-6 h-6 rounded-full bg-[var(--brand-green)]/15
-                                                 text-[var(--brand-green)] text-[11px] font-black
-                                                 flex items-center justify-center shrink-0">2</span>
-                                    <span class="text-[12px] font-black uppercase tracking-widest">
-                                        Lignes de réception
-                                    </span>
-                                    <span class="ml-auto px-2.5 py-0.5 rounded-full
-                                                 bg-[var(--brand-green)]/10 text-[var(--brand-green)]
-                                                 text-[11px] font-black">
-                                        {{ modalRows.length }} ligne{{ modalRows.length > 1 ? 's' : '' }}
-                                    </span>
+                            <!-- ── Dates ──────────────────────────────────── -->
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">Collecte</label>
+                                    <input v-model="form.collecte" type="datetime-local"
+                                           class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                 </div>
-
-                                <div class="p-4 space-y-3">
-
-                                    <!-- Chaque ligne en accordéon -->
-                                    <div v-for="(row, i) in modalRows" :key="row._key"
-                                        class="border border-[var(--sidebar-border)] rounded-xl overflow-hidden">
-
-                                        <!-- En-tête ligne (toujours visible) -->
-                                        <div class="flex items-center gap-3 px-4 py-2.5
-                                                    bg-[var(--background)] border-b border-[var(--sidebar-border)]"
-                                             :class="{ 'border-b-0': !row.open }">
-                                            <span class="w-6 h-6 rounded-full bg-[var(--brand-orange)]/10
-                                                         text-[var(--brand-orange)] text-[11px] font-black
-                                                         flex items-center justify-center shrink-0">
-                                                {{ i + 1 }}
-                                            </span>
-
-                                            <!-- Résumé condensé quand fermé -->
-                                            <template v-if="!row.open">
-                                                <span class="text-[12px] font-black">
-                                                    {{ rowSummary(row).num }}
-                                                </span>
-                                                <span class="text-[12px]">
-                                                    {{ row.caissette ?? '—' }} caissettes
-                                                </span>
-                                                <span v-if="rowSummary(row).kg"
-                                                    class="px-2.5 py-0.5 rounded-full
-                                                           bg-[var(--brand-orange)]/10 text-[var(--brand-orange)]
-                                                           text-[11px] font-black">
-                                                    {{ rowSummary(row).kg }}
-                                                </span>
-                                                <span v-if="row.voiture"
-                                                    class="text-[12px]">
-                                                    {{ row.voiture }}
-                                                </span>
-                                            </template>
-                                            <span v-else
-                                                class="text-[12px] font-black uppercase tracking-widest">
-                                                Ligne de collecte
-                                            </span>
-
-                                            <div class="ml-auto flex items-center gap-1.5">
-                                                <button @click="toggleRow(row)"
-                                                    class="p-1.5 rounded-lg border border-[var(--sidebar-border)]
-                                                           hover:border-[var(--brand-green)]/60 transition-all">
-                                                    <ChevronUp v-if="row.open" class="w-3.5 h-3.5" />
-                                                    <ChevronDown v-else class="w-3.5 h-3.5" />
-                                                </button>
-                                                <button @click="removeModalRow(i)"
-                                                    class="p-1.5 rounded-lg border border-[var(--sidebar-border)]
-                                                           hover:border-red-500 hover:text-red-500 transition-all">
-                                                    <Trash2 class="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <!-- Corps accordéon -->
-                                        <div v-show="row.open" class="p-4 grid grid-cols-3 gap-4">
-
-                                            <!-- N° Parcelle -->
-                                            <div class="space-y-1.5">
-                                                <label class="text-[12px] font-black uppercase tracking-wider">
-                                                    N° Parcelle
-                                                </label>
-                                                <select v-model="row.parcelle_id" class="input-line w-full">
-                                                    <option :value="null" disabled>— choisir —</option>
-                                                    <option v-for="p in props.parcelles"
-                                                            :key="p.id" :value="p.id">
-                                                        {{ p.num }}
-                                                    </option>
-                                                </select>
-                                            </div>
-
-                                            <!-- Nb caissettes -->
-                                            <div class="space-y-1.5">
-                                                <label class="text-[12px] font-black uppercase tracking-wider">
-                                                    Nb caissettes livrées
-                                                </label>
-                                                <input v-model="row.caissette"
-                                                    type="number" min="0"
-                                                    class="input-line w-full" />
-                                            </div>
-
-                                            <!-- Quantité kg (calculée) -->
-                                            <div class="space-y-1.5">
-                                                <label class="text-[12px] font-black uppercase tracking-wider">
-                                                    Quantité litchis (kg)
-                                                </label>
-                                                <div class="flex items-center gap-2 h-10">
-                                                    <span v-if="ligneKg(row.caissette)"
-                                                        class="px-3 py-1.5 rounded-xl
-                                                               bg-[var(--brand-orange)]/10
-                                                               text-[var(--brand-orange)]
-                                                               text-[13px] font-black">
-                                                        {{ ligneKg(row.caissette) }} kg
-                                                    </span>
-                                                    <span v-else class="text-[12px] font-bold">—</span>
-                                                    <span v-if="row.caissette && poidsGlobal"
-                                                        class="text-[10px]">
-                                                        {{ row.caissette }} × {{ poidsGlobal }}
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            <!-- Voiture -->
-                                            <div class="space-y-1.5">
-                                                <label class="text-[12px] font-black uppercase tracking-wider">
-                                                    N° Voiture
-                                                </label>
-                                                <input v-model="row.voiture" type="text"
-                                                    class="input-line w-full" />
-                                            </div>
-
-                                            <!-- Commune -->
-                                            <div class="space-y-1.5">
-                                                <label class="text-[12px] font-black uppercase tracking-wider">
-                                                    Commune / District
-                                                </label>
-                                                <input v-model="row.commune" type="text"
-                                                    class="input-line w-full" />
-                                            </div>
-
-                                            <!-- Collecte -->
-                                            <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                                                <label class="text-[12px] font-black uppercase tracking-wider">
-                                                    Collecte
-                                                </label>
-                                                <input v-model="row.collecte"
-                                                    type="datetime-local"
-                                                    class="input-line w-full text-[12px]" 
-                                                    @input="(e) => (e.target as HTMLInputElement).blur()"/>
-                                            </div>
-
-                                            <!-- Départ champ -->
-                                            <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                                                <label class="text-[12px] font-black uppercase tracking-wider">
-                                                    Départ au champ
-                                                </label>
-                                                <input v-model="row.depart_champ"
-                                                    type="datetime-local"
-                                                    class="input-line w-full text-[12px]" 
-                                                    @input="(e) => (e.target as HTMLInputElement).blur()"/>
-                                            </div>
-
-                                            <!-- Retour station -->
-                                            <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                                                <label class="text-[12px] font-black uppercase tracking-wider">
-                                                    Retour à la station
-                                                </label>
-                                                <input v-model="row.retour_station"
-                                                    type="datetime-local"
-                                                    class="input-line w-full text-[12px]" 
-                                                    @input="(e) => (e.target as HTMLInputElement).blur()"/>
-                                            </div>
-
-                                        </div>
-                                    </div>
-
-                                    <!-- Bouton ajouter ligne -->
-                                    <button @click="addModalRow"
-                                        class="w-full h-9 border-2 border-dashed border-[var(--brand-orange)]/30
-                                               hover:border-[var(--brand-orange)] text-[var(--brand-orange)]
-                                               rounded-xl text-[11px] font-black uppercase tracking-widest
-                                               flex items-center justify-center gap-2
-                                               transition-all active:scale-[0.99]">
-                                        <Plus class="w-3.5 h-3.5" /> Ajouter une ligne
-                                    </button>
-
-                                    <!-- Total -->
-                                    <div v-if="totalCaissettes > 0"
-                                        class="flex items-center justify-end gap-3
-                                               pt-3 border-t border-[var(--sidebar-border)]/50">
-                                        <span class="text-[12px] font-bold uppercase tracking-widest">
-                                            Total · {{ totalCaissettes }} caissettes
-                                        </span>
-                                        <span v-if="totalKg"
-                                            class="px-3 py-1 rounded-xl bg-[var(--brand-orange)]/10
-                                                   text-[var(--brand-orange)] text-[13px] font-black">
-                                            {{ totalKg }} kg
-                                        </span>
-                                    </div>
+                                <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">Départ champ</label>
+                                    <input v-model="form.depart_champ" type="datetime-local"
+                                           class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
+                                </div>
+                                <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">Retour station</label>
+                                    <input v-model="form.retour_station" type="datetime-local"
+                                           class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                 </div>
                             </div>
 
@@ -745,7 +586,7 @@ const parcelleNum = (ligne: FicheReception['lignes'][0]) =>
                             <p class="text-[12px] text-[var(--text)]/50 font-bold mt-1.5">
                                 Fiche <span class="font-black text-[var(--text)]">
                                     {{ deleteTarget?.fiche_number || '#' + deleteTarget?.id }}
-                                </span> et toutes ses lignes — action irréversible.
+                                </span> — action irréversible.
                             </p>
                         </div>
                     </div>

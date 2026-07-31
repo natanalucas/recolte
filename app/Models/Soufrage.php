@@ -14,7 +14,7 @@ class Soufrage extends Model
         'enqueteur_id', 'fiche_number', 'raqt_id', 'lieu_traitement',
         'cycle', 'box', 'concent', 'parcelle_id', 'code_traca_id',
         'caissette', 'soufre', 'debut', 'fin',
-        'operateur_id', 'controle_raqt',
+        'operateur_id', 'controle_raqt', 'reception_id'
     ];
 
     protected $casts = [
@@ -47,4 +47,15 @@ class Soufrage extends Model
     {
         return $this->belongsTo(User::class, 'enqueteur_id');
     }
+
+    public function reception(): BelongsTo
+    {
+        return $this->belongsTo(FicheReception::class, 'reception_id');
+    }
+
+    public function certification(): BelongsTo
+    {
+        return $this->belongsTo(TypeCertification::class, 'concent');
+    }
+    
 }

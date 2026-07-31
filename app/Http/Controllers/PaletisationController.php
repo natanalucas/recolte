@@ -136,11 +136,18 @@ class PaletisationController extends Controller
         foreach ([1, 2, 3] as $lotNumber) {
             $lot = $lots[$lotNumber - 1] ?? null;
 
+            // Si les données sont manquantes, on supprime le lot s'il existe
+            if (empty($lot) || is_null($lot['code_traca_id']) || is_null($lot['nb_cartons'])) {
+                $paletisation->lots()->where('lot_number', $lotNumber)->delete();
+                continue;
+            }
+
+            // Sinon on met à jour ou crée
             $paletisation->lots()->updateOrCreate(
                 ['lot_number' => $lotNumber],
                 [
-                    'code_traca_id' => $lot['code_traca_id'] ?? null,
-                    'nb_cartons'    => $lot['nb_cartons'] ?? null,
+                    'code_traca_id' => $lot['code_traca_id'],
+                    'nb_cartons'    => $lot['nb_cartons'],
                 ]
             );
         }

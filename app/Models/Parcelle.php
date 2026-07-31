@@ -27,4 +27,19 @@ class Parcelle extends Model
     {
         return $this->belongsTo(Producteur::class);
     }
+
+    public function receptionLignes()
+    {
+        return $this->hasMany(ReceptionLigne::class);
+    }
+
+    public function soufrages()
+    {
+        return $this->hasMany(Soufrage::class);
+    }
+
+    public function fichesReception()
+    {
+        return $this->hasMany(FicheReception::class);
+    }
 }

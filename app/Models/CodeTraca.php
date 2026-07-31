@@ -14,4 +14,19 @@ class CodeTraca extends Model
     {
         return $this->belongsTo(Parcelle::class, 'parcelle_id');
     }
+
+    public function soufrages()
+    {
+        return $this->hasMany(Soufrage::class);
+    }
+
+    public function triages()
+    {
+        return $this->hasMany(Triage::class);
+    }
+
+    public function paletisationLots()
+    {
+        return $this->hasMany(PaletisationLot::class);
+    }
 }
