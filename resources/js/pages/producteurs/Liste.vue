@@ -11,6 +11,11 @@ import Pagination from '@/pages/components/Pagination.vue';
 // -------------------------------------------------------
 // Types
 // -------------------------------------------------------
+interface Societe {
+  id: number
+  nom: string
+}
+
 interface Parcelle {
   num: number
   pieds: number
@@ -29,6 +34,8 @@ interface Producteur {
   adresse: string
   ggn: string
   produit: string
+  societe_id?: number
+  societe_nom?: string
   datesControle: string[]
   parcelles: Omit<Parcelle, '_newLoc'>[]
 }
@@ -36,7 +43,12 @@ interface Producteur {
 // -------------------------------------------------------
 // Props
 // -------------------------------------------------------
-const props = defineProps<{ producteurs: Producteur[]; kg: number; }>();
+const props = defineProps<{ 
+  producteurs: Producteur[]; 
+  kg: number; 
+  isAdmin: boolean;
+  societes: Societe[];
+}>();
 
 const breadcrumbs = [{ title: 'Registre des Producteurs', href: '#' }];
 
@@ -50,7 +62,7 @@ const kgForm = useForm({ kg: props.kg });
 // -------------------------------------------------------
 const form = useForm({
   nom: '', prenom: '', email: '', adresse: '', telephone: '',
-  ggn: '', produit: '',
+  ggn: '', produit: '', societe_id: null as number | null,
   dates_controle: [] as string[],
   parcelles: [emptyParcelle()] as Parcelle[],
 });
@@ -109,6 +121,7 @@ function openAddModal() {
   form.telephone        = '';
   form.ggn              = '';
   form.produit          = '';
+  form.societe_id       = null;
   form.dates_controle   = [];
   form.parcelles        = [emptyParcelle()];
   form.clearErrors();
@@ -124,6 +137,7 @@ function openEditModal(item: Producteur) {
   form.telephone      = item.telephone;
   form.ggn            = item.ggn;
   form.produit        = item.produit;
+  form.societe_id     = item.societe_id ?? null;
   form.dates_controle = [...item.datesControle];
   form.parcelles      = (item.parcelles ?? []).map(p => ({
     num:          p.num,
@@ -228,7 +242,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
   <AppLayout :breadcrumbs="breadcrumbs">
     <div class="p-6 space-y-6 w-full max-w-none">
 
-      <!-- En-tête -->
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-xl font-black text-foreground uppercase tracking-tighter">Registre des Producteurs</h1>
@@ -237,7 +250,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
           </p>
         </div>
 
-        <!-- Bouton si enquêteurs disponibles -->
         <button
           @click="openAddModal"
           class="h-10 px-6 bg-[var(--brand-green)] text-white text-[12px] font-black tracking-widest rounded-xl
@@ -246,11 +258,8 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
         </button>
       </div>
 
-            <!-- Recherche -->
-      <!-- Kg + Recherche -->
       <div class="p-6 bg-card border border-border rounded-2xl shadow-sm shadow-black/5 space-y-4">
 
-        <!-- Modificateur kg -->
         <div class="flex items-center gap-4 pb-4 border-b border-border">
           <div class="flex items-center gap-2">
             <span class="text-[11px] font-black uppercase opacity-60 tracking-widest">Rendement estimé (kg/pied)</span>
@@ -282,7 +291,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
           </div>
         </div>
 
-        <!-- Recherche -->
         <div class="relative max-w-md">
           <Search class="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground" />
           <input v-model="searchQuery" type="text" placeholder="Filtrer..."
@@ -291,7 +299,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
         </div>
       </div>
 
-      <!-- Tableau -->
       <div class="bg-card border border-border rounded-2xl overflow-hidden shadow-sm shadow-black/5">
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
@@ -311,7 +318,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                   : 'bg-zinc-50 dark:bg-zinc-800/60'"
                 class="hover:bg-[var(--brand-green)]/5 transition-colors group align-top">
 
-                <!-- Producteur -->
                 <td class="p-5 border-r border-border">
                   <div class="space-y-3">
                     <div class="space-y-1.5">
@@ -331,6 +337,10 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                                      px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
                           <CheckCircle2 class="w-2.5 h-2.5" /> Approuvé
                         </span>
+                        <span v-if="props.isAdmin && item.societe_nom" class="text-[9px] font-black text-blue-800 uppercase bg-blue-100 border border-blue-200
+                                     px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
+                          <Layers class="w-2.5 h-2.5" /> {{ item.societe_nom }}
+                        </span>
                       </div>
                     </div>
                     <div class="space-y-1.5 pt-2 border-t border-border/30">
@@ -346,7 +356,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                   </div>
                 </td>
 
-                <!-- Parcelles -->
                 <td class="p-0 border-r border-border">
                   <table class="w-full border-collapse">
                     <tbody class="divide-y divide-border">
@@ -389,7 +398,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                   </table>
                 </td>
 
-                <!-- Estimation de production -->
                 <td class="p-5 border-l border-border/50">
                   <div class="space-y-1 text-center">
                     <p class="text-[15px] font-black tabular-nums leading-none">
@@ -401,7 +409,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                   </div>
                 </td>
 
-                <!-- Dates contrôle -->
                 <td class="p-5">
                   <div class="flex flex-col gap-2">
                     <div v-for="date in item.datesControle" :key="date"
@@ -414,9 +421,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                   </div>
                 </td>
 
-
-
-                <!-- Actions -->
                 <td class="p-5 text-right border-l border-border/50">
                   <div class="flex items-center justify-end gap-1">
                     <button @click="openEditModal(item)" :disabled="form.processing"
@@ -454,9 +458,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
         />
       </div>
 
-      <!-- ============================================== -->
-      <!-- Modal Ajout / Édition                         -->
-      <!-- ============================================== -->
       <Teleport to="body">
         <div v-if="showModal"
           class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -474,9 +475,20 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
 
             <div class="p-8 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar">
 
-              <!-- Infos de base -->
               <div class="grid grid-cols-2 gap-6">
-                <!-- Produit -->
+                
+                <div v-if="props.isAdmin" class="col-span-2 flex flex-col gap-1.5 p-4 mb-2 bg-[var(--brand-orange)]/10 rounded-xl border border-[var(--brand-orange)]/30">
+                  <label class="text-[13px] font-black uppercase text-[var(--brand-orange)]">Société de Rattachement</label>
+                  <select v-model="form.societe_id" class="input-line dark:bg-zinc-900"
+                    :class="{ 'border-red-500': form.errors.societe_id }">
+                    <option :value="null" disabled>-- Sélectionner une société --</option>
+                    <option v-for="soc in props.societes" :key="soc.id" :value="soc.id">
+                      {{ soc.nom }}
+                    </option>
+                  </select>
+                  <p v-if="form.errors.societe_id" class="text-[11px] text-red-500 font-bold">{{ form.errors.societe_id }}</p>
+                </div>
+
                 <div class="col-span-2 flex flex-col gap-1.5">
                   <label class="text-[13px] font-black uppercase">Produit</label>
                   <select v-model="form.produit" class="input-line"
@@ -489,21 +501,21 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                 </div>
 
                 <div class="flex flex-col gap-1.5">
-                  <label class="text-[12px] font-black">Nom</label>
+                  <label class="text-[12px] font-black">Nom DU PRODUCTEUR</label>
                   <input v-model="form.nom" type="text" class="input-line"
                     :class="{ 'border-red-500': form.errors.nom }" />
                   <p v-if="form.errors.nom" class="text-[11px] text-red-500 font-bold">{{ form.errors.nom }}</p>
                 </div>
 
                 <div class="flex flex-col gap-1.5">
-                  <label class="text-[12px] font-black">Prénoms</label>
+                  <label class="text-[12px] font-black">PRÉNOMS DU PRODUCTEUR</label>
                   <input v-model="form.prenom" type="text" class="input-line"
                     :class="{ 'border-red-500': form.errors.prenom }" />
                   <p v-if="form.errors.prenom" class="text-[11px] text-red-500 font-bold">{{ form.errors.prenom }}</p>
                 </div>
 
                 <div class="col-span-2 flex flex-col gap-1.5">
-                  <label class="text-[12px] font-black">Adresse Administrative</label>
+                  <label class="text-[12px] font-black">ADRESSE ADMINISTRATIVE ET COORDONNEE TELEPHONQIUE</label>
                   <input v-model="form.adresse" type="text" class="input-line" />
                 </div>
 
@@ -520,7 +532,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                 </div>
               </div>
 
-              <!-- Dates de contrôle -->
               <div class="space-y-3 bg-muted/20 p-4 rounded-2xl border border-[var(--brand-green)]">
                 <label class="text-[12px] font-black uppercase">Date Contrôle Interne</label>
                 <div class="flex gap-3">
@@ -545,7 +556,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
 
               <hr class="border-border">
 
-              <!-- Parcelles -->
               <div class="space-y-6">
                 <div class="flex items-center justify-between">
                   <h3 class="text-[12px] font-black uppercase tracking-tighter flex items-center gap-2">
@@ -581,7 +591,7 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                       </p>
                     </div>
                     <div class="flex flex-col gap-1.5">
-                      <label class="text-[11px] font-black uppercase opacity-70">Nbre de Pieds</label>
+                      <label class="text-[11px] font-black uppercase opacity-70">NOMBRE DE PIEDS</label>
                       <input v-model="parcelle.pieds" type="number" class="input-line"
                         :class="{ 'border-red-500': form.errors[`parcelles.${pIdx}.pieds`] }" />
                       <p v-if="form.errors[`parcelles.${pIdx}.pieds`]" class="text-[11px] text-red-500 font-bold">
@@ -618,7 +628,7 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
                   </div>
 
                   <div class="flex flex-col gap-1.5">
-                    <label class="text-[11px] font-black uppercase opacity-70">Localisation</label>
+                    <label class="text-[11px] font-black uppercase opacity-70">LOCALISATION EXPLOITATION</label>
                     <input v-model="parcelle.localisation" type="text"
                       placeholder="Zone / commune..."
                       class="input-line uppercase"
@@ -631,7 +641,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
               </div>
             </div>
 
-            <!-- Footer modal -->
             <div class="p-6 bg-muted/20 border-t border-border flex gap-4">
               <button @click="showModal = false"
                 class="flex-1 h-12 text-[14px] font-black border border-border rounded-xl
@@ -655,9 +664,6 @@ watch([searchQuery, itemsPerPage], () => { currentPage.value = 1; });
         </div>
       </Teleport>
 
-      <!-- ============================================== -->
-      <!-- Modal Suppression                             -->
-      <!-- ============================================== -->
       <Teleport to="body">
         <div v-if="showDeleteModal"
           class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60] p-4">

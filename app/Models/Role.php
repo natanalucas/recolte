@@ -15,6 +15,7 @@ class Role extends Model
     const ADMIN = 'admin';
     const ENQUETEUR = 'enqueteur';
     const PRODUCTEUR = 'producteur';
+    const MANAGER = 'manager';
 
     public function users()
     {

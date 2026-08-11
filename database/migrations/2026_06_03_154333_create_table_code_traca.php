@@ -26,12 +26,20 @@ return new class extends Migration
 
         Schema::table('triages', function (Blueprint $table) {
             // Suppression de la colonne
-            $table->dropColumn('code');
+            if (Schema::hasColumn('triages', 'code')) {
+                Schema::table('triages', function (Blueprint $table) {
+                    $table->dropColumn('code');
+                });
+            }
         });
 
         Schema::table('soufrages', function (Blueprint $table) {
             // Suppression de la colonne
-            $table->dropColumn('code');
+            if (Schema::hasColumn('triages', 'code')) {
+                Schema::table('triages', function (Blueprint $table) {
+                    $table->dropColumn('code');
+                });
+            }
         });
     }
 

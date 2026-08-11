@@ -5,14 +5,25 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import { Trash2, Pencil, Plus, X, Users, AlertTriangle } from 'lucide-vue-next';
 
+interface Societe {
+    id: number;
+    nom: string;
+}
+
 interface Operateur {
     id: number;
     nom: string;
     prenom: string;
     travail: 'jour' | 'nuit';
+    societe_id?: number;
+    societe?: Societe | null;
 }
 
-const props = defineProps<{ operateurs: Operateur[] }>();
+const props = defineProps<{
+    operateurs: Operateur[];
+    isAdmin: boolean;
+    societes: Societe[];
+}>();
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Opérateurs', href: '#' }];
 
@@ -25,7 +36,12 @@ const deletingId      = ref<number | null>(null);
 const searchQuery     = ref('');
 
 // ── Formulaire ───────────────────────────────────────
-const form = useForm({ nom: '', prenom: '', travail: '' as 'jour' | 'nuit' | '' });
+const form = useForm({
+    nom: '',
+    prenom: '',
+    travail: '' as 'jour' | 'nuit' | '',
+    societe_id: '' as number | '',
+});
 
 // ── Filtrage ─────────────────────────────────────────
 const filtered = computed(() => {
@@ -64,6 +80,7 @@ function openAddModal() {
     form.nom = '';
     form.prenom = '';
     form.travail = '';
+    form.societe_id = '';
     form.clearErrors();
     showModal.value = true;
 }
@@ -73,6 +90,7 @@ function openEditModal(op: Operateur) {
     form.nom = op.nom;
     form.prenom = op.prenom;
     form.travail = op.travail;
+    form.societe_id = op.societe_id ?? op.societe?.id ?? '';
     form.clearErrors();
     showModal.value = true;
 }
@@ -173,6 +191,10 @@ function executeDelete() {
                     <span class="flex-1 text-[11px] font-black uppercase tracking-widest text-muted-foreground">
                         Opérateur
                     </span>
+                    <span v-if="props.isAdmin"
+                        class="text-[11px] font-black uppercase tracking-widest text-muted-foreground w-28 text-center">
+                        Société
+                    </span>
                     <span class="text-[11px] font-black uppercase tracking-widest text-muted-foreground w-16 text-center">
                         Poste
                     </span>
@@ -199,6 +221,12 @@ function executeDelete() {
                             </p>
                             <p class="text-[11px] text-muted-foreground font-bold">Opérateur #{{ idx + 1 }}</p>
                         </div>
+
+                        <!-- Société -->
+                        <span v-if="props.isAdmin"
+                            class="w-28 text-center px-2 py-1 text-[11px] font-bold text-muted-foreground truncate shrink-0">
+                            {{ op.societe?.nom ?? '—' }}
+                        </span>
 
                         <!-- Badge Jour/Nuit -->
                         <span :class="travailBadge(op.travail)"
@@ -281,6 +309,22 @@ function executeDelete() {
                             <p v-if="form.errors.prenom" class="text-[11px] text-red-500 font-bold">{{ form.errors.prenom }}</p>
                         </div>
 
+                        <!-- Société (Admin uniquement) -->
+                        <div v-if="props.isAdmin" class="flex flex-col gap-1.5">
+                            <label class="text-[12px] font-black uppercase tracking-wider text-foreground">Société</label>
+                            <select v-model="form.societe_id"
+                                class="h-10 px-3 rounded-xl border bg-background text-[13px] font-bold
+                                       text-foreground focus:outline-none focus:ring-2 focus:ring-[var(--brand-green)]/30
+                                       focus:border-[var(--brand-green)] transition-all"
+                                :class="form.errors.societe_id ? 'border-red-500' : 'border-border'">
+                                <option value="" disabled>Sélectionner une société</option>
+                                <option v-for="s in props.societes" :key="s.id" :value="s.id">
+                                    {{ s.nom }}
+                                </option>
+                            </select>
+                            <p v-if="form.errors.societe_id" class="text-[11px] text-red-500 font-bold">{{ form.errors.societe_id }}</p>
+                        </div>
+
                         <!-- Travail -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-[12px] font-black uppercase tracking-wider text-foreground">Poste</label>
@@ -311,7 +355,8 @@ function executeDelete() {
                                    hover:bg-muted text-foreground tracking-widest transition-all">
                             Annuler
                         </button>
-                        <button @click="save" :disabled="form.processing || !form.travail"
+                        <button @click="save"
+                            :disabled="form.processing || !form.travail || (props.isAdmin && !form.societe_id)"
                             class="flex-1 h-11 text-[13px] font-black uppercase bg-[var(--brand-orange)] text-black
                                    rounded-xl shadow-lg shadow-[var(--brand-orange)]/20 tracking-widest transition-all
                                    active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed

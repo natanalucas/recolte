@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class PaletisationLot extends Model
 {
@@ -14,18 +15,22 @@ class PaletisationLot extends Model
         'nb_cartons',
     ];
 
+    // Relation avec la palette
     public function paletisation(): BelongsTo
     {
         return $this->belongsTo(Paletisation::class);
     }
 
-    /**
-     * NB : si le trait `HasCodeTraca` (utilisé par App\Models\Triage) expose déjà
-     * une relation équivalente, vous pouvez le réutiliser ici à la place
-     * (`use HasCodeTraca;`) pour rester cohérent avec le reste de l'app.
-     */
+    // Relation avec le code de traçabilité
     public function codeTraca(): BelongsTo
     {
         return $this->belongsTo(CodeTraca::class);
+    }
+
+    // Relation many-to-many avec les certifications
+    public function certifications(): BelongsToMany
+    {
+        return $this->belongsToMany(TypeCertification::class, 'certification_paletisation_lot', 'paletisation_lot_id', 'type_certification_id')
+                    ->withTimestamps();
     }
 }

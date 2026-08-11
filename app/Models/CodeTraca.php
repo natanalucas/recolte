@@ -8,11 +8,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CodeTraca extends Model
 {
     protected $table = 'code_traca';
-    protected $fillable = ['code', 'parcelle_id'];
+    protected $fillable = ['code', 'parcelle_id', 'societe_id'];
 
     public function parcelle()
     {
         return $this->belongsTo(Parcelle::class, 'parcelle_id');
+    }
+
+    public function societe()
+    {
+        return $this->belongsTo(Societe::class, 'societe_id');
     }
 
     public function soufrages()

@@ -5,6 +5,11 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+/* Vos variables personnalisées sont probablement ici, par exemple : */
+@theme {
+  --color-border: #e4e4e7; /* ou var(--border) */
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -175,6 +180,10 @@
 }
 
 @layer components {
+  .input-line {
+    @apply w-full h-10 bg-transparent border-b border-border focus:border-[var(--brand-green)] outline-none text-[13px] font-bold text-foreground transition-colors;
+  }
+  
   .radio-green, .radio-orange {
     /* On applique les styles de base communs avec Tailwind */
     @apply w-4 h-4 cursor-pointer appearance-none rounded-full border-2 transition-all duration-200;

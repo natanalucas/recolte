@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { ref, reactive, watch, computed, nextTick } from 'vue';
+import { ref, reactive, computed, watch, nextTick } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import HeaderFiche from './HeaderFiche.vue';
@@ -9,38 +9,45 @@ import QRCode from 'qrcode';
 
 const breadcrumbs: BreadcrumbItem[] = [];
 
-interface TypeCertification { id: number; nom: string; }
-// Dans Triage.vue
+interface TypeCertification {
+    id: number;
+    nom: string;
+    societe_id?: number | null;
+}
+
 interface Producteur {
     id: number;
     nom: string;
     prenom: string;
+    societe_id: number;
 }
 
 interface Parcelle {
     id: number;
     num: string;
+    localisation: string | null;
     producteur?: Producteur | null;
 }
 
 interface CodeTracaRelation {
     id: number;
     code: string;
+    societe_id?: number | null;
     parcelle?: Parcelle | null;
 }
 
 interface TriageRecord {
-    id: number; 
-    code_traca_id: number; // Changé en number si c'est une clé étrangère ID
+    id: number;
+    code_traca_id: number;
     type_carton: '2kg' | '5.5kg';
-    type_certification_id: number | null; 
-    debut: string; 
+    certifications: TypeCertification[]; // ← maintenant un tableau
+    debut: string;
     fin: string;
-    tapis: number[]; 
-    nombre: number | null; 
+    tapis: number[];
+    nombre: number | null;
     qualite: number;
-    certification: TypeCertification | null;
-    code_traca?: CodeTracaRelation | null; // <-- Ajout de la relation
+    societe_id: number | null;
+    code_traca?: CodeTracaRelation | null;
 }
 
 interface PaginationLink {
@@ -63,142 +70,261 @@ interface PaginatedTriages {
 const props = defineProps<{
     certifications: TypeCertification[];
     triages: PaginatedTriages;
-    souragesCodes: { id: number; code: string }[];
-    enqueteurs: { id: number; nom: string; prenom: string; poste: string }[];
+    souragesCodes: CodeTracaRelation[];
+    parcelles: Parcelle[];
+    enqueteurs: { id: number; nom: string; prenom: string; poste: string; societe_id: number | null }[];
+    societes: { id: number; nom: string }[];
+    isAdmin: boolean;
+    isManager: boolean;
+    currentEnqueteurId: number | null;
+    currentEnqueteurLabel: string | null;
 }>();
 
-const goToPage = (url: string | null) => {
-    if (!url) return;
-    router.get(url, {}, { preserveScroll: true, preserveState: true, replace: true });
-};
+const isEnqueteur = computed(() => !props.isAdmin && !props.isManager);
 
-const breadcrumbItems: BreadcrumbItem[] = [];
-const enqueteurId = ref<number | null>(null);
+// ── Enquêteur initial ────────────────────────────────
+const enqueteurId = ref<number | null>(
+    props.isAdmin || props.isManager ? null : props.currentEnqueteurId
+);
 const ficheNumber = ref('');
 
+// ── Formulaire d'ajout ────────────────────────────────
 const makeForm = () => ({
-    code_traca_id: null as number | null, type_carton: '5.5kg' as '2kg' | '5.5kg',
-    type_certification_id: null as number | null,
-    debut: new Date().toISOString().slice(0, 16), fin: '',
-    tapis: [] as number[], nombre: null as number | null, qualite: 1,
+    code_traca_id: null as number | null,
+    type_carton: '5.5kg' as '2kg' | '5.5kg',
+    certifications: [] as number[], // ← tableau d'IDs
+    debut: new Date().toISOString().slice(0, 16),
+    fin: '',
+    tapis: [] as number[],
+    nombre: null as number | null,
+    qualite: 1,
+    societe_id: null as number | null,
 });
 
-const form        = reactive(makeForm());
-const formSaving  = ref(false);
-const formError   = ref<string | null>(null);
+const form = reactive(makeForm());
+
+// ── Filtrage dynamique ──────────────────────────────────
+const filteredEnqueteurs = computed(() => {
+    if (!props.isAdmin) return props.enqueteurs;
+    if (!form.societe_id) return [];
+    return props.enqueteurs.filter(e => e.societe_id === form.societe_id);
+});
+
+const filteredCodes = computed(() => {
+    if (!props.isAdmin) return props.souragesCodes;
+    if (!form.societe_id) return [];
+    return props.souragesCodes.filter(c => c.societe_id === form.societe_id);
+});
+
+const filteredCertifications = computed(() => {
+    if (!props.isAdmin) return props.certifications;
+    if (!form.societe_id) return [];
+    return props.certifications.filter(c => c.societe_id === form.societe_id);
+});
+
+// ── Watcher ──────────────────────────────────────────────
+watch(() => form.societe_id, (newVal, oldVal) => {
+    if (props.isAdmin && newVal !== oldVal) {
+        form.code_traca_id = null;
+        form.certifications = [];
+        enqueteurId.value = null;
+    }
+});
+
+// ── État du formulaire ──────────────────────────────────
+const formSaving = ref(false);
+const formError = ref<string | null>(null);
 const formSuccess = ref(false);
 
 const toggleTapis = (n: number) => {
     const i = form.tapis.indexOf(n);
-    if (i === -1) form.tapis.push(n); else form.tapis.splice(i, 1);
+    if (i === -1) form.tapis.push(n);
+    else form.tapis.splice(i, 1);
 };
-const resetForm = () => { Object.assign(form, makeForm()); formError.value = null; formSuccess.value = false; };
+
+const resetForm = () => {
+    Object.assign(form, makeForm());
+    formError.value = null;
+    formSuccess.value = false;
+};
+
 const submitForm = () => {
-    if (!form.code_traca_id) { formError.value = 'Le code de traçabilité est requis.'; return; }
-    formSaving.value = true; formError.value = null; formSuccess.value = false;
-    router.post(route('triage.store'), {
-        enqueteur_id: enqueteurId.value, // <-- Remplacé ici
+    if (!form.code_traca_id) {
+        formError.value = 'Le code de traçabilité est requis.';
+        return;
+    }
+    if (!enqueteurId.value && !isEnqueteur.value) {
+        formError.value = 'Veuillez sélectionner un enquêteur.';
+        return;
+    }
+
+    formSaving.value = true;
+    formError.value = null;
+    formSuccess.value = false;
+
+    const payload = {
+        enqueteur_id: props.isAdmin || props.isManager ? enqueteurId.value : props.currentEnqueteurId,
         fiche_number: ficheNumber.value,
-        ...form, tapis: JSON.stringify(form.tapis),
-    }, {
+        ...form,
+        tapis: JSON.stringify(form.tapis),
+    };
+
+    router.post(route('triage.store'), payload, {
         preserveScroll: true,
-        onSuccess: () => { formSaving.value = false; formSuccess.value = true; resetForm(); },
-        onError:   (e) => { formError.value = Object.values(e)[0] as string ?? 'Erreur'; formSaving.value = false; },
+        onSuccess: () => {
+            formSaving.value = false;
+            formSuccess.value = true;
+            resetForm();
+        },
+        onError: (e) => {
+            formError.value = Object.values(e)[0] as string ?? 'Erreur';
+            formSaving.value = false;
+        },
     });
 };
 
-const editingId  = ref<number | null>(null);
-const editForm   = reactive<any>({});
+// ── Édition ──────────────────────────────────────────────
+const editingId = ref<number | null>(null);
+const editForm = reactive<any>({
+    code_traca_id: null,
+    type_carton: '5.5kg',
+    certifications: [] as number[],
+    debut: '',
+    fin: '',
+    tapis: [],
+    nombre: null,
+    qualite: 1,
+    societe_id: null,
+});
 const editSaving = ref(false);
-const editError  = ref<string | null>(null);
+const editError = ref<string | null>(null);
+
+const editFilteredCodes = computed(() => {
+    if (!props.isAdmin) return props.souragesCodes;
+    if (!editForm.societe_id) return [];
+    return props.souragesCodes.filter(c => c.societe_id === editForm.societe_id);
+});
+
+const editFilteredCertifications = computed(() => {
+    if (!props.isAdmin) return props.certifications;
+    if (!editForm.societe_id) return [];
+    return props.certifications.filter(c => c.societe_id === editForm.societe_id);
+});
 
 const openEdit = (row: TriageRecord) => {
     editingId.value = row.id;
+    // On récupère les IDs des certifications existantes
+    const certIds = row.certifications?.map(c => c.id) ?? [];
     Object.assign(editForm, {
-        code_traca_id: row.code_traca_id, type_carton: row.type_carton,
-        type_certification_id: row.certification?.id ?? null,
-        debut: row.debut?.slice(0, 16) ?? '', fin: row.fin?.slice(0, 16) ?? '',
-        tapis: [...(row.tapis ?? [])], nombre: row.nombre, qualite: row.qualite,
+        code_traca_id: row.code_traca_id,
+        type_carton: row.type_carton,
+        certifications: certIds,
+        debut: row.debut?.slice(0, 16) ?? '',
+        fin: row.fin?.slice(0, 16) ?? '',
+        tapis: [...(row.tapis ?? [])],
+        nombre: row.nombre,
+        qualite: row.qualite,
+        societe_id: row.societe_id ?? null,
     });
     editError.value = null;
 };
-const closeEdit = () => { editingId.value = null; editError.value = null; };
+
+const closeEdit = () => {
+    editingId.value = null;
+    editError.value = null;
+};
+
 const toggleEditTapis = (n: number) => {
     const i = editForm.tapis.indexOf(n);
-    if (i === -1) editForm.tapis.push(n); else editForm.tapis.splice(i, 1);
+    if (i === -1) editForm.tapis.push(n);
+    else editForm.tapis.splice(i, 1);
 };
+
 const saveEdit = () => {
     if (!editingId.value) return;
-    editSaving.value = true; editError.value = null;
-    router.put(route('triage.update', editingId.value), {
-        ...editForm, tapis: JSON.stringify(editForm.tapis),
-    }, {
+    if (!editForm.code_traca_id) {
+        editError.value = 'Le code de traçabilité est requis.';
+        return;
+    }
+
+    editSaving.value = true;
+    editError.value = null;
+
+    const payload = {
+        ...editForm,
+        tapis: JSON.stringify(editForm.tapis),
+    };
+
+    router.put(route('triage.update', editingId.value), payload, {
         preserveScroll: true,
-        onSuccess: () => { editSaving.value = false; closeEdit(); },
-        onError:   (e) => { editError.value = Object.values(e)[0] as string ?? 'Erreur'; editSaving.value = false; },
+        onSuccess: () => {
+            editSaving.value = false;
+            closeEdit();
+        },
+        onError: (e) => {
+            editError.value = Object.values(e)[0] as string ?? 'Erreur';
+            editSaving.value = false;
+        },
     });
 };
 
-const deleteTarget    = ref<TriageRecord | null>(null);
+// ── Suppression ──────────────────────────────────────────
+const deleteTarget = ref<TriageRecord | null>(null);
 const showDeleteModal = ref(false);
-const deleting        = ref(false);
-const confirmDelete = (row: TriageRecord) => { deleteTarget.value = row; showDeleteModal.value = true; };
+const deleting = ref(false);
+
+const confirmDelete = (row: TriageRecord) => {
+    deleteTarget.value = row;
+    showDeleteModal.value = true;
+};
+
 const executeDelete = () => {
     if (!deleteTarget.value) return;
     deleting.value = true;
     router.delete(route('triage.destroy', deleteTarget.value.id), {
         preserveScroll: true,
-        onSuccess: () => { showDeleteModal.value = false; deleteTarget.value = null; deleting.value = false; },
-        onError:   () => { deleting.value = false; },
+        onSuccess: () => {
+            showDeleteModal.value = false;
+            deleteTarget.value = null;
+            deleting.value = false;
+        },
+        onError: () => { deleting.value = false; },
     });
 };
 
-// ── QR Code ───────────────────────────────────────────
-const qrTarget    = ref<TriageRecord | null>(null);
+// ── QR Code ──────────────────────────────────────────────
+const qrTarget = ref<TriageRecord | null>(null);
 const showQrModal = ref(false);
 const qrCanvasRef = ref<HTMLCanvasElement | null>(null);
 const qrGenerating = ref(false);
 
 const qrForm = reactive({
-    producteur:   '',
+    producteur: '',
     date_recolte: '',
     num_parcelle: '',
-    num_lot:      '',
+    num_lot: '',
 });
 
 const openQr = (row: TriageRecord) => {
-    qrTarget.value       = row;
-    qrForm.date_recolte  = row.debut?.slice(0, 10) ?? '';
-    
-    // 1. Récupérer le code de traçabilité directement lié à la ligne
-    const codeTexte = row.code_traca ? row.code_traca.code : '';
-
-    // 2. Assigner le numéro de lot et la parcelle
-    qrForm.num_lot       = codeTexte;
-    qrForm.num_parcelle  = codeTexte ? codeTexte.slice(0, 2) : '';
-    
-    // 3. Récupérer le producteur depuis les relations chargées
+    qrTarget.value = row;
+    qrForm.date_recolte = row.debut?.slice(0, 10) ?? '';
+    const codeTexte = row.code_traca?.code ?? '';
+    qrForm.num_lot = codeTexte;
+    qrForm.num_parcelle = codeTexte ? codeTexte.slice(0, 2) : '';
     const prod = row.code_traca?.parcelle?.producteur;
-    console.log(row.code_traca);
-    if (prod) {
-        // Concatène le Prénom et le Nom (ex: "Jean RAKOTO")
-        qrForm.producteur = `${prod.prenom} ${prod.nom}`.trim();
-    } else {
-        qrForm.producteur = '';
-    }
-    
-    showQrModal.value    = true;
+    qrForm.producteur = prod ? `${prod.prenom} ${prod.nom}`.trim() : '';
+    showQrModal.value = true;
 };
 
 const qrText = computed(() => {
     if (!qrTarget.value) return '';
-    const cert = qrTarget.value.certification?.nom ?? 'Non certifié';
+    const certNames = qrTarget.value.certifications?.map(c => c.nom).join(', ') ?? 'Non certifié';
     return [
         `Nom du producteur: ${qrForm.producteur || '—'}`,
         `Date de récolte du litchi: ${qrForm.date_recolte || '—'}`,
         `Numéro de la parcelle de litchi récolté: ${qrForm.num_parcelle || '—'}`,
         `Numéro de lot du litchi récolté: ${qrForm.num_lot || '—'}`,
-        `Litchi certifié: ${cert}`,
+        `Litchi certifié: ${certNames}`,
     ].join('\n');
 });
 
@@ -209,16 +335,25 @@ const generateQr = async () => {
     try {
         // @ts-ignore
         await QRCode.toCanvas(qrCanvasRef.value, qrText.value, {
-            width: 256, margin: 2,
+            width: 256,
+            margin: 2,
             color: { dark: '#1a2e1a', light: '#f8fdf8' },
         });
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error(e);
+    }
     qrGenerating.value = false;
 };
 
-// Re-génère à chaque ouverture ou changement de champ
-watch(showQrModal, async (v) => { if (v) { await nextTick(); generateQr(); } });
-watch(qrForm, () => { if (showQrModal.value) generateQr(); }, { deep: true });
+watch(showQrModal, async (v) => {
+    if (v) {
+        await nextTick();
+        generateQr();
+    }
+});
+watch(qrForm, () => {
+    if (showQrModal.value) generateQr();
+}, { deep: true });
 
 const downloadQr = () => {
     if (!qrCanvasRef.value) return;
@@ -228,30 +363,34 @@ const downloadQr = () => {
     link.click();
 };
 
-// ── Helpers ───────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────
 const fmtDate = (d: string | null) => {
     if (!d) return '—';
-    return new Date(d).toLocaleString('fr-FR', { 
-        day: '2-digit', 
-        month: '2-digit', 
+    return new Date(d).toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
         year: 'numeric',
-        hour: '2-digit', 
-        minute: '2-digit' 
+        hour: '2-digit',
+        minute: '2-digit',
     });
 };
 
-const certifAbbr = (nom: string) => nom.slice(0, 2).toUpperCase();
-
-const getCodeLibelle = (id) => {
-  if (!id || !props.souragesCodes) return '—';
-  
-  // On cherche l'objet qui a le bon ID
-  const found = props.souragesCodes.find(s => s.id === id);
-  
-  // Si on l'a trouvé, on retourne son code, sinon un tiret
-  return found ? found.code : '—';
+const getCodeLibelle = (id: number | null) => {
+    if (!id || !props.souragesCodes) return '—';
+    const found = props.souragesCodes.find((s) => s.id === id);
+    return found ? found.code : '—';
 };
 
+const goToPage = (url: string | null) => {
+    if (!url) return;
+    router.get(url, {}, { preserveScroll: true, preserveState: true, replace: true });
+};
+
+// ── Fonction pour formater les certifications dans le tableau ──
+const formatCertifications = (certs: TypeCertification[] | undefined) => {
+    if (!certs || certs.length === 0) return '—';
+    return certs.map(c => c.nom).join(', ');
+};
 </script>
 
 <template>
@@ -259,22 +398,23 @@ const getCodeLibelle = (id) => {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="p-6 space-y-6 bg-[var(--background)] text-[var(--text)] font-sans">
-
-            <HeaderFiche
-                title="Triage"
-                :enqueteurs="props.enqueteurs"
-            />
+            <HeaderFiche title="Triage" :enqueteurs="props.enqueteurs" />
 
             <!-- ── Légende certifications ── -->
             <div class="flex justify-between items-center text-sm font-medium">
                 <div class="flex flex-wrap gap-3">
                     <div class="flex gap-4 text-xs font-bold">
-                <div v-for="cert in certifications" :key="cert.id" class="flex items-center gap-2 bg-[var(--card-alt)] px-3 py-1.5 rounded-lg border border-[var(--sidebar-border)]">
-                    <span class="bg-[var(--brand-green)] text-white px-1.5 py-0.5 rounded text-[10px]">{{ cert.nom[0] }}</span>
-                    <span>{{ cert.nom }}</span>
-                </div>
-            </div>
-                    <span v-if="props.certifications.length === 0" class="text-[11px] italic opacity-40">Aucune certification enregistrée</span>
+                        <div v-for="cert in props.certifications" :key="cert.id"
+                            class="flex items-center gap-2 bg-[var(--card-alt)] px-3 py-1.5 rounded-lg border border-[var(--sidebar-border)]">
+                            <span class="bg-[var(--brand-green)] text-white px-1.5 py-0.5 rounded text-[10px]">
+                                {{ cert.nom[0] }}
+                            </span>
+                            <span>{{ cert.nom }}</span>
+                        </div>
+                    </div>
+                    <span v-if="props.certifications.length === 0" class="text-[11px] italic opacity-40">
+                        Aucune certification enregistrée
+                    </span>
                 </div>
                 <div class="italic text-[12px] opacity-60">
                     * Qualité de soufrage : <span class="font-black">1 à 3</span>
@@ -289,24 +429,50 @@ const getCodeLibelle = (id) => {
                     </h2>
                 </div>
                 <div class="p-6 space-y-5">
-                    <!-- Insertion du bloc Enquêteur Responsable tout en haut -->
-                    <div class="space-y-1.5">
+                    <!-- Société (admin uniquement) -->
+                    <div v-if="isAdmin" class="space-y-1.5">
+                        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                            Société *
+                        </label>
+                        <select v-model="form.societe_id" class="input-line w-full" required>
+                            <option :value="null">— choisir —</option>
+                            <option v-for="s in props.societes" :key="s.id" :value="s.id">
+                                {{ s.nom }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Enquêteur Responsable -->
+                    <div v-if="isAdmin || isManager" class="space-y-1.5">
                         <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
                             Enquêteur Responsable *
                         </label>
                         <select v-model="enqueteurId" class="input-line w-full">
                             <option :value="null">— choisir un enquêteur —</option>
-                            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                            <option v-for="e in filteredEnqueteurs" :key="e.id" :value="e.id">
                                 {{ e.prenom }} {{ e.nom }}
                             </option>
                         </select>
                     </div>
+                    <div v-else class="space-y-1.5">
+                        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                            Enquêteur Responsable
+                        </label>
+                        <input type="text" class="input-line w-full" disabled
+                               :value="props.currentEnqueteurLabel || '—'" />
+                    </div>
+
+                    <!-- Champs -->
                     <div class="grid grid-cols-3 gap-4">
                         <div class="space-y-1.5">
                             <label class="text-[12px] font-black uppercase tracking-wider">Code de traçabilité *</label>
                             <select v-model="form.code_traca_id" class="input-line w-full">
-                                <option value="" disabled>Sélectionner un code...</option>
-                                <option v-for="s in props.souragesCodes" :key="s.id" :value="s.id">{{ s.code }}</option>
+                                <option value="" disabled>
+                                    {{ isAdmin && !form.societe_id ? 'Veuillez d\'abord choisir une société' : 'Sélectionner un code...' }}
+                                </option>
+                                <option v-for="s in filteredCodes" :key="s.id" :value="s.id">
+                                    {{ s.code }}
+                                </option>
                             </select>
                         </div>
                         <div class="space-y-1.5">
@@ -321,25 +487,37 @@ const getCodeLibelle = (id) => {
                             </div>
                         </div>
                         <div class="space-y-1.5">
-                            <label class="text-[12px] font-black uppercase tracking-wider">Type de certification</label>
-                            <select v-model="form.type_certification_id" class="input-line w-full">
-                                <option :value="null" disabled>{{ props.certifications.length === 0 ? 'Liste encore vide' : 'Sélectionner...' }}</option>
-                                <option v-for="c in props.certifications" :key="c.id" :value="c.id">{{ c.nom }}</option>
-                            </select>
+                            <label class="text-[12px] font-black uppercase tracking-wider">Certifications</label>
+                            <div class="flex flex-wrap gap-3 pt-1">
+                                <label v-for="cert in filteredCertifications" :key="cert.id"
+                                    class="flex items-center gap-1.5 cursor-pointer text-[12px]">
+                                    <input type="checkbox" :value="cert.id" v-model="form.certifications"
+                                        class="w-3.5 h-3.5 rounded border-[var(--sidebar-border)] text-[var(--brand-green)] focus:ring-[var(--brand-green)]">
+                                    <span>{{ cert.nom }}</span>
+                                </label>
+                                <span v-if="filteredCertifications.length === 0" class="text-[11px] italic opacity-40">
+                                    Aucune certification disponible
+                                </span>
+                            </div>
                         </div>
                     </div>
+
                     <div class="grid grid-cols-4 gap-4">
                         <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
                             <label class="text-[12px] font-black uppercase tracking-wider">Début de triage</label>
-                            <input v-model="form.debut" type="datetime-local" class="input-line w-full text-[12px] font-bold" @input="(e) => (e.target as HTMLInputElement).blur()"/>
+                            <input v-model="form.debut" type="datetime-local"
+                                class="input-line w-full text-[12px] font-bold"
+                                @input="(e) => (e.target as HTMLInputElement).blur()" />
                         </div>
                         <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
                             <label class="text-[12px] font-black uppercase tracking-wider">Fin de triage</label>
-                            <input v-model="form.fin" type="datetime-local" class="input-line w-full text-[12px] font-bold" @input="(e) => (e.target as HTMLInputElement).blur()"/>
+                            <input v-model="form.fin" type="datetime-local"
+                                class="input-line w-full text-[12px] font-bold"
+                                @input="(e) => (e.target as HTMLInputElement).blur()" />
                         </div>
                         <div class="space-y-1.5">
                             <label class="text-[12px] font-black uppercase tracking-wider">Nombre de cartons</label>
-                            <input v-model="form.nombre" type="number" class="input-line w-full" placeholder="—"/>
+                            <input v-model="form.nombre" type="number" class="input-line w-full" placeholder="—" />
                         </div>
                         <div class="space-y-1.5">
                             <label class="text-[12px] font-black uppercase tracking-wider">Qualité de soufrage</label>
@@ -353,14 +531,16 @@ const getCodeLibelle = (id) => {
                             </div>
                         </div>
                     </div>
+
+                    <!-- Tapis -->
                     <div class="space-y-2">
                         <label class="block mb-2 text-[12px] font-black uppercase tracking-wider">
                             N° du tapis utilisé
-                            <span v-if="form.tapis.length > 0" class="ml-2 px-2 py-0.5 rounded-full bg-[var(--brand-orange)]/10 text-[var(--brand-orange)] text-[11px] font-black normal-case">
+                            <span v-if="form.tapis.length > 0"
+                                class="ml-2 px-2 py-0.5 rounded-full bg-[var(--brand-orange)]/10 text-[var(--brand-orange)] text-[11px] font-black normal-case">
                                 {{ form.tapis.slice().sort((a,b)=>a-b).map(n=>'T'+n).join(', ') }}
                             </span>
                         </label>
-
                         <div class="flex flex-wrap gap-2">
                             <button v-for="n in 14" :key="n" type="button" @click="toggleTapis(n)"
                                 :class="form.tapis.includes(n) ? 'bg-[var(--brand-green)] text-white border-[var(--brand-green)] shadow shadow-[var(--brand-green)]/30' : 'border-[var(--sidebar-border)] hover:border-[var(--brand-green)]/60 text-[var(--text)]'"
@@ -369,6 +549,8 @@ const getCodeLibelle = (id) => {
                             </button>
                         </div>
                     </div>
+
+                    <!-- Footer -->
                     <div class="flex items-center justify-between pt-2 border-t border-[var(--sidebar-border)]/30">
                         <p v-if="formError" class="text-[12px] font-bold text-red-500">⚠️ {{ formError }}</p>
                         <p v-else-if="formSuccess" class="text-[12px] font-bold text-emerald-500 flex items-center gap-1">
@@ -411,14 +593,14 @@ const getCodeLibelle = (id) => {
                         <table class="w-full text-left border-collapse min-w-[1200px]">
                             <thead>
                                 <tr class="bg-[var(--brand-green)]/80 text-white text-[10px] font-black uppercase">
-                                    <th class="px-3 py-3 text-center border-r border-white/10">Code</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10">Type Carton</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10">Certification</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10">Début</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10">Fin</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10">Tapis utilisés</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10">Code Traça</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10">Type de Carton</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10">Certification(s)</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10">Début de Triage</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10">Fin de Triage</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10">N° Tapis utilisés</th>
                                     <th class="px-3 py-3 text-center border-r border-white/10">Nb Cartons</th>
-                                    <th class="px-3 py-3 text-center border-r border-white/10">Qualité</th>
+                                    <th class="px-3 py-3 text-center border-r border-white/10">Qualité de Soufrage</th>
                                     <th class="px-3 py-3 text-center">Actions</th>
                                 </tr>
                             </thead>
@@ -432,25 +614,45 @@ const getCodeLibelle = (id) => {
                                 <template v-for="row in props.triages.data" :key="row.id">
                                     <!-- Ligne normale -->
                                     <tr v-if="editingId !== row.id" class="hover:bg-[var(--brand-green)]/5 transition-colors text-[12px]">
-                                        <td class="px-3 py-3 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">{{ getCodeLibelle(row.code_traca_id) || '—' }}</td>
-                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--brand-green)]/10 text-[var(--brand-green)] border border-[var(--brand-green)]/20">{{ row.type_carton }}</span>
+                                        <td class="px-3 py-3 text-center font-mono font-black border-r border-[var(--sidebar-border)]/30">
+                                            {{ getCodeLibelle(row.code_traca_id) || '—' }}
                                         </td>
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <span v-if="row.certification" class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">{{ row.certification.nom }}</span>
-                                            <span v-else class="opacity-30">—</span>
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--brand-green)]/10 text-[var(--brand-green)] border border-[var(--brand-green)]/20">
+                                                {{ row.type_carton }}
+                                            </span>
                                         </td>
-                                        <td class="px-3 py-3 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">{{ fmtDate(row.debut) }}</td>
-                                        <td class="px-3 py-3 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">{{ fmtDate(row.fin) }}</td>
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
                                             <div class="flex flex-wrap gap-1 justify-center">
-                                                <span v-for="t in (row.tapis ?? []).slice().sort((a,b)=>a-b)" :key="t" class="px-1.5 py-0.5 rounded text-[9px] font-black bg-[var(--brand-green)]/10 text-[var(--brand-green)]">T{{ t }}</span>
+                                                <span v-for="cert in row.certifications" :key="cert.id"
+                                                    class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                                    {{ cert.nom }}
+                                                </span>
+                                                <span v-if="!row.certifications || row.certifications.length === 0" class="opacity-30">—</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-3 py-3 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
+                                            {{ fmtDate(row.debut) }}
+                                        </td>
+                                        <td class="px-3 py-3 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
+                                            {{ fmtDate(row.fin) }}
+                                        </td>
+                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
+                                            <div class="flex flex-wrap gap-1 justify-center">
+                                                <span v-for="t in (row.tapis ?? []).slice().sort((a,b)=>a-b)" :key="t"
+                                                    class="px-1.5 py-0.5 rounded text-[9px] font-black bg-[var(--brand-green)]/10 text-[var(--brand-green)]">
+                                                    T{{ t }}
+                                                </span>
                                                 <span v-if="!row.tapis?.length" class="opacity-30">—</span>
                                             </div>
                                         </td>
-                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">{{ row.nombre ?? '—' }}</td>
                                         <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
-                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--brand-orange)]/10 text-[var(--brand-orange)]">{{ row.qualite }}/3</span>
+                                            {{ row.nombre ?? '—' }}
+                                        </td>
+                                        <td class="px-3 py-3 text-center border-r border-[var(--sidebar-border)]/30">
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--brand-orange)]/10 text-[var(--brand-orange)]">
+                                                {{ row.qualite }}/3
+                                            </span>
                                         </td>
                                         <td class="px-3 py-3 text-center">
                                             <div class="flex items-center justify-center gap-1.5">
@@ -458,7 +660,6 @@ const getCodeLibelle = (id) => {
                                                     class="inline-flex items-center gap-1 px-3 py-1 rounded-lg border border-[var(--sidebar-border)] text-[10px] font-black uppercase hover:border-[var(--brand-green)] hover:text-[var(--brand-green)] transition-all">
                                                     <Pencil class="w-3 h-3" /> Modifier
                                                 </button>
-                                                <!-- ── Bouton QR Code ── -->
                                                 <button @click="openQr(row)"
                                                     class="inline-flex items-center gap-1 px-3 py-1 rounded-lg border border-[var(--sidebar-border)] text-[10px] font-black uppercase hover:border-emerald-500 hover:text-emerald-600 transition-all"
                                                     title="Générer QR Code">
@@ -472,7 +673,7 @@ const getCodeLibelle = (id) => {
                                         </td>
                                     </tr>
 
-                                    <!-- Ligne édition inline -->
+                                    <!-- Ligne d'édition -->
                                     <tr v-else class="bg-[var(--brand-green)]/5 border-l-4 border-[var(--brand-green)]">
                                         <td colspan="9" class="p-4">
                                             <div class="space-y-4">
@@ -480,14 +681,20 @@ const getCodeLibelle = (id) => {
                                                     <span class="text-[12px] font-black uppercase tracking-widest text-[var(--brand-green)] flex items-center gap-2">
                                                         <Pencil class="w-3 h-3" /> Modification — {{ getCodeLibelle(row.code_traca_id) }}
                                                     </span>
-                                                    <button @click="closeEdit" class="opacity-40 hover:opacity-100 transition"><X class="w-4 h-4" /></button>
+                                                    <button @click="closeEdit" class="opacity-40 hover:opacity-100 transition">
+                                                        <X class="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                                 <div class="grid grid-cols-4 gap-3">
                                                     <div class="space-y-1">
                                                         <label class="text-[10px] font-black uppercase opacity-50">Code</label>
                                                         <select v-model="editForm.code_traca_id" class="input-line w-full">
-                                                            <option value="" disabled>Sélectionner un code...</option>
-                                                            <option v-for="s in props.souragesCodes" :key="s.id" :value="s.id">{{ s.code }}</option>
+                                                            <option value="" disabled>
+                                                                {{ isAdmin && !editForm.societe_id ? 'Veuillez d\'abord choisir une société' : 'Sélectionner un code...' }}
+                                                            </option>
+                                                            <option v-for="s in editFilteredCodes" :key="s.id" :value="s.id">
+                                                                {{ s.code }}
+                                                            </option>
                                                         </select>
                                                     </div>
                                                     <div class="space-y-1">
@@ -496,14 +703,21 @@ const getCodeLibelle = (id) => {
                                                             <button v-for="p in ['2kg', '5.5kg']" :key="p" type="button"
                                                                 @click="editForm.type_carton = p"
                                                                 :class="editForm.type_carton === p ? 'bg-[var(--brand-green)] text-white border-[var(--brand-green)]' : 'border-[var(--sidebar-border)]'"
-                                                                class="flex-1 h-9 rounded-xl border-2 text-[11px] font-black transition-all">{{ p }}</button>
+                                                                class="flex-1 h-9 rounded-xl border-2 text-[11px] font-black transition-all">
+                                                                {{ p }}
+                                                            </button>
                                                         </div>
                                                     </div>
                                                     <div class="space-y-1">
-                                                        <label class="text-[10px] font-black uppercase opacity-50">Certification</label>
-                                                        <select v-model="editForm.type_certification_id" class="input-line w-full">
-                                                            <option v-for="c in props.certifications" :key="c.id" :value="c.id">{{ c.nom }}</option>
-                                                        </select>
+                                                        <label class="text-[10px] font-black uppercase opacity-50">Certifications</label>
+                                                        <div class="flex flex-wrap gap-2 pt-1">
+                                                            <label v-for="cert in editFilteredCertifications" :key="cert.id"
+                                                                class="flex items-center gap-1 cursor-pointer text-[11px]">
+                                                                <input type="checkbox" :value="cert.id" v-model="editForm.certifications"
+                                                                    class="w-3 h-3 rounded border-[var(--sidebar-border)] text-[var(--brand-green)] focus:ring-[var(--brand-green)]">
+                                                                <span>{{ cert.nom }}</span>
+                                                            </label>
+                                                        </div>
                                                     </div>
                                                     <div class="space-y-1">
                                                         <label class="text-[10px] font-black uppercase opacity-50">Qualité</label>
@@ -511,16 +725,18 @@ const getCodeLibelle = (id) => {
                                                             <button v-for="q in [1, 2, 3]" :key="q" type="button"
                                                                 @click="editForm.qualite = q"
                                                                 :class="editForm.qualite === q ? 'bg-[var(--brand-orange)] text-black border-[var(--brand-orange)]' : 'border-[var(--sidebar-border)]'"
-                                                                class="flex-1 h-9 rounded-xl border-2 text-[11px] font-black transition-all">{{ q }}</button>
+                                                                class="flex-1 h-9 rounded-xl border-2 text-[11px] font-black transition-all">
+                                                                {{ q }}
+                                                            </button>
                                                         </div>
                                                     </div>
                                                     <div class="space-y-1" @click="$event.currentTarget.querySelector('input').showPicker()">
                                                         <label class="text-[10px] font-black uppercase opacity-50">Début</label>
-                                                        <input v-model="editForm.debut" type="datetime-local" class="input-line w-full text-[11px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
+                                                        <input v-model="editForm.debut" type="datetime-local" class="input-line w-full text-[11px]" @input="(e) => (e.target as HTMLInputElement).blur()" />
                                                     </div>
                                                     <div class="space-y-1" @click="$event.currentTarget.querySelector('input').showPicker()">
                                                         <label class="text-[10px] font-black uppercase opacity-50">Fin</label>
-                                                        <input v-model="editForm.fin" type="datetime-local" class="input-line w-full text-[11px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
+                                                        <input v-model="editForm.fin" type="datetime-local" class="input-line w-full text-[11px]" @input="(e) => (e.target as HTMLInputElement).blur()" />
                                                     </div>
                                                     <div class="space-y-1">
                                                         <label class="text-[10px] font-black uppercase opacity-50">Nombre de cartons</label>
@@ -530,21 +746,26 @@ const getCodeLibelle = (id) => {
                                                 <div class="space-y-1.5">
                                                     <label class="text-[10px] font-black uppercase opacity-50">
                                                         Tapis utilisés
-                                                        <span v-if="editForm.tapis?.length" class="ml-2 px-2 py-0.5 rounded-full bg-[var(--brand-green)]/10 text-[var(--brand-green)] text-[9px] font-black normal-case">
+                                                        <span v-if="editForm.tapis?.length"
+                                                            class="ml-2 px-2 py-0.5 rounded-full bg-[var(--brand-green)]/10 text-[var(--brand-green)] text-[9px] font-black normal-case">
                                                             {{ editForm.tapis.slice().sort((a:number,b:number)=>a-b).map((n:number)=>'T'+n).join(', ') }}
                                                         </span>
                                                     </label>
                                                     <div class="flex flex-wrap gap-1.5">
                                                         <button v-for="n in 14" :key="n" type="button" @click="toggleEditTapis(n)"
                                                             :class="editForm.tapis?.includes(n) ? 'bg-[var(--brand-green)] text-white border-[var(--brand-green)]' : 'border-[var(--sidebar-border)] hover:border-[var(--brand-green)]/60'"
-                                                            class="w-9 h-9 rounded-xl border-2 text-[11px] font-black transition-all active:scale-95">T{{ n }}</button>
+                                                            class="w-9 h-9 rounded-xl border-2 text-[11px] font-black transition-all active:scale-95">
+                                                            T{{ n }}
+                                                        </button>
                                                     </div>
                                                 </div>
                                                 <div class="flex items-center justify-between pt-2 border-t border-[var(--sidebar-border)]/30">
                                                     <p v-if="editError" class="text-[11px] font-bold text-red-500">⚠️ {{ editError }}</p>
                                                     <span v-else />
                                                     <div class="flex gap-2">
-                                                        <button @click="closeEdit" class="h-9 px-4 border border-[var(--sidebar-border)] rounded-xl text-[11px] font-black uppercase hover:bg-[var(--sidebar-border)]/20 transition-all">Annuler</button>
+                                                        <button @click="closeEdit" class="h-9 px-4 border border-[var(--sidebar-border)] rounded-xl text-[11px] font-black uppercase hover:bg-[var(--sidebar-border)]/20 transition-all">
+                                                            Annuler
+                                                        </button>
                                                         <button @click="saveEdit" :disabled="editSaving"
                                                             class="h-9 px-5 bg-[var(--brand-green)] text-white rounded-xl text-[11px] font-black uppercase flex items-center gap-2 shadow active:scale-95 transition-all disabled:opacity-50">
                                                             <svg v-if="editSaving" class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -572,35 +793,25 @@ const getCodeLibelle = (id) => {
                     </p>
                     <div class="flex items-center gap-1">
                         <template v-for="(link, idx) in props.triages.links" :key="idx">
-                            <button
-                                type="button"
-                                @click="goToPage(link.url)"
-                                :disabled="!link.url"
-                                v-html="link.label"
+                            <button type="button" @click="goToPage(link.url)" :disabled="!link.url" v-html="link.label"
                                 :class="[
                                     'min-w-[34px] h-9 px-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all',
-                                    link.active
-                                        ? 'bg-[var(--brand-green)] text-white shadow shadow-[var(--brand-green)]/30'
-                                        : link.url
-                                            ? 'border border-[var(--sidebar-border)] hover:bg-[var(--brand-green)]/10'
-                                            : 'opacity-30 cursor-not-allowed border border-[var(--sidebar-border)]/40'
-                                ]"
-                            />
+                                    link.active ? 'bg-[var(--brand-green)] text-white shadow shadow-[var(--brand-green)]/30'
+                                    : link.url ? 'border border-[var(--sidebar-border)] hover:bg-[var(--brand-green)]/10'
+                                    : 'opacity-30 cursor-not-allowed border border-[var(--sidebar-border)]/40'
+                                ]" />
                         </template>
                     </div>
                 </div>
             </div>
-
         </div>
 
         <!-- ══════════════════════════════════════════ -->
         <!-- ── Modales ── -->
         <!-- ══════════════════════════════════════════ -->
         <Teleport to="body">
-
             <!-- Modal Suppression -->
-            <div v-if="showDeleteModal"
-                class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            <div v-if="showDeleteModal" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4"
                 @click.self="showDeleteModal = false">
                 <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
                     <div class="p-8 text-center space-y-4">
@@ -632,12 +843,9 @@ const getCodeLibelle = (id) => {
             </div>
 
             <!-- ── Modal QR Code ── -->
-            <div v-if="showQrModal"
-                class="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            <div v-if="showQrModal" class="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-50 p-4"
                 @click.self="showQrModal = false">
                 <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden">
-
-                    <!-- Header -->
                     <div class="px-6 py-4 bg-[var(--brand-green)] flex items-center justify-between">
                         <h2 class="text-[13px] font-black uppercase tracking-widest text-white flex items-center gap-2">
                             <QrCode class="w-4 h-4" />
@@ -649,63 +857,56 @@ const getCodeLibelle = (id) => {
                     </div>
 
                     <div class="p-6 flex gap-8">
-
-                        <!-- Formulaire de saisie -->
+                        <!-- Formulaire -->
                         <div class="flex-1 space-y-4">
                             <p class="text-[11px] font-bold opacity-50 uppercase tracking-widest">
                                 Compléter les informations du QR Code
                             </p>
-
                             <div class="space-y-3">
                                 <div class="space-y-1">
                                     <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Nom du producteur</label>
-                                    <input v-model="qrForm.producteur" type="text"
-                                        class="input-line w-full" placeholder="Ex: RAKOTO Jean" />
+                                    <input v-model="qrForm.producteur" type="text" class="input-line w-full" placeholder="Ex: RAKOTO Jean" />
                                 </div>
-
                                 <div class="space-y-1">
                                     <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Date de récolte du litchi</label>
                                     <input v-model="qrForm.date_recolte" type="date" class="input-line w-full text-[12px] font-bold" />
                                 </div>
-
                                 <div class="space-y-1">
                                     <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Numéro de parcelle</label>
-                                    <input v-model="qrForm.num_parcelle" type="text"
-                                        class="input-line w-full" placeholder="Ex: P-042" />
+                                    <input v-model="qrForm.num_parcelle" type="text" class="input-line w-full" placeholder="Ex: P-042" />
                                 </div>
-
                                 <div class="space-y-1">
                                     <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Numéro de lot</label>
-                                    <input v-model="qrForm.num_lot" type="text"
-                                        class="input-line w-full" placeholder="Pré-rempli depuis le code" />
+                                    <input v-model="qrForm.num_lot" type="text" class="input-line w-full" placeholder="Pré-rempli depuis le code" />
                                 </div>
-
                                 <div class="space-y-1">
                                     <label class="text-[11px] font-black uppercase tracking-wider opacity-60">Litchi certifié</label>
                                     <div class="input-line w-full text-[12px] font-black flex items-center gap-2">
-                                        <span v-if="qrTarget?.certification"
-                                            class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                                            {{ qrTarget.certification.nom }}
+                                        <div v-if="qrTarget?.certifications && qrTarget.certifications.length > 0" class="flex flex-wrap gap-1">
+                                            <span v-for="cert in qrTarget.certifications" :key="cert.id"
+                                                class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                                {{ cert.nom }}
+                                            </span>
+                                        </div>
+                                        <span v-else class="opacity-40 font-normal italic text-[11px]">
+                                            Non certifié — modifiable depuis la ligne
                                         </span>
-                                        <span v-else class="opacity-40 font-normal italic text-[11px]">Non certifié — modifiable depuis la ligne</span>
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Aperçu texte -->
                             <div class="mt-3 p-3 rounded-xl bg-[var(--brand-green)]/5 border border-[var(--brand-green)]/20">
                                 <p class="text-[9px] font-black uppercase opacity-50 mb-1.5 tracking-widest">Contenu encodé</p>
                                 <pre class="text-[10px] font-mono opacity-70 whitespace-pre-wrap leading-relaxed">{{ qrText }}</pre>
                             </div>
                         </div>
 
-                        <!-- QR Code + actions -->
+                        <!-- QR Code -->
                         <div class="flex flex-col items-center gap-4 pt-6">
                             <div class="p-3 bg-white rounded-2xl shadow-lg border border-[var(--sidebar-border)]">
                                 <canvas ref="qrCanvasRef" class="block rounded-lg" />
                             </div>
                             <p class="text-[10px] font-bold opacity-40 uppercase tracking-widest text-center">
-                                Durée de vie infinie<br/>données encodées en local
+                                Durée de vie infinie<br />données encodées en local
                             </p>
                             <button @click="downloadQr"
                                 class="w-full h-10 bg-[var(--brand-green)] text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-[var(--brand-green)]/20 active:scale-95 transition-all">
@@ -715,12 +916,9 @@ const getCodeLibelle = (id) => {
                                 Télécharger PNG
                             </button>
                         </div>
-
                     </div>
                 </div>
             </div>
-
         </Teleport>
-
     </AppLayout>
 </template>

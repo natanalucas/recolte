@@ -18,11 +18,17 @@ class Producteur extends Model
         'adresse',
         'ggn',
         'produit',
+        'societe_id'
     ];
 
     public function parcelles(): HasMany
     {
         return $this->hasMany(Parcelle::class);
+    }
+
+    public function societe(): BelongsTo
+    {
+        return $this->BelongsTo(Societe::class);
     }
 
     public function controles(): HasMany

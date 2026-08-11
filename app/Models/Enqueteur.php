@@ -1,5 +1,4 @@
 <?php
-// app/Models/Enqueteur.php
 
 namespace App\Models;
 
@@ -12,36 +11,24 @@ class Enqueteur extends Model
 {
     use HasFactory, SoftDeletes;
 
-    // ✅ Champs autorisés en écriture (jamais de guarded: [])
     protected $fillable = [
         'poste',
         'travail',
         'user_id',
         'is_active',
+        // 'societe_id' a été supprimé (désormais dans User)
     ];
 
-    // ✅ Champs cachés dans les réponses JSON
     protected $hidden = [
-        'password',
         'deleted_at',
     ];
 
-    // ✅ Cast automatique des types
     protected $casts = [
         'is_active'  => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
 
-    // ✅ Mutateur : hacher automatiquement le password
-    protected function password(): \Illuminate\Database\Eloquent\Casts\Attribute
-    {
-        return \Illuminate\Database\Eloquent\Casts\Attribute::make(
-            set: fn ($value) => bcrypt($value),
-        );
-    }
-
-    // ✅ Scope : uniquement les enquêteurs actifs
     public function scopeActif($query)
     {
         return $query->where('is_active', true);
@@ -49,25 +36,18 @@ class Enqueteur extends Model
 
     public function user(): BelongsTo
     {
-        // Laravel va chercher par défaut la colonne 'user_id' dans votre table enquêteurs
         return $this->belongsTo(User::class);
     }
 
-    protected function travail(): Attribute
+    // La société est accessible via l'utilisateur associé
+    // On peut définir un accesseur pour faciliter l'affichage
+    public function getSocieteIdAttribute()
     {
-        return Attribute::make(
-            set: fn (string $value) => strtolower(trim($value)),
-        );
+        return $this->user?->societe_id;
     }
 
-    /**
-     * Force le champ 'poste' en minuscules
-     */
-    protected function poste(): Attribute
+    public function getSocieteNomAttribute()
     {
-        return Attribute::make(
-            set: fn (string $value) => strtolower(trim($value)),
-        );
+        return $this->user?->societe?->nom;
     }
-
 }

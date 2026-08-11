@@ -5,22 +5,27 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import HeaderFiche from './HeaderFiche.vue';
 import { Pencil, Trash2 } from 'lucide-vue-next';
 
-// Props reçues depuis le contrôleur Laravel
+// Props
 const props = defineProps<{
     expeditions: any[];
     availablePalettes: any[];
     certifications: any[];
     enqueteurs: { id: number; nom: string; prenom: string; poste: string }[];
-    usedPaletteIds: number[]; // IDs des palettes déjà utilisées dans d'autres expéditions
+    usedPaletteIds: number[];
+    societes: { id: number; nom: string }[];
+    isAdmin: boolean;
+    isManager: boolean;
+    currentEnqueteurId: number | null;
+    currentEnqueteurLabel: string | null;
 }>();
+
+const isEnqueteur = computed(() => !props.isAdmin && !props.isManager);
 
 const isModalOpen = ref(false);
 const isEditing = ref(false);
 const currentId = ref<number | null>(null);
 
-// ---------------------------------------------------------------------------
-// Pagination (côté client)
-// ---------------------------------------------------------------------------
+// ─── Pagination ──────────────────────────────────────────────
 const pageSize = ref(10);
 const currentPage = ref(1);
 
@@ -45,14 +50,8 @@ const paginationRangeLabel = computed(() => {
 function goToPage(page: number) {
     currentPage.value = Math.min(Math.max(1, page), pageCount.value);
 }
-
-function goToPreviousPage() {
-    goToPage(currentPage.value - 1);
-}
-
-function goToNextPage() {
-    goToPage(currentPage.value + 1);
-}
+function goToPreviousPage() { goToPage(currentPage.value - 1); }
+function goToNextPage() { goToPage(currentPage.value + 1); }
 
 const paginationItems = computed<(number | '…')[]>(() => {
     const total = pageCount.value;
@@ -72,9 +71,10 @@ const paginationItems = computed<(number | '…')[]>(() => {
     return items;
 });
 
-// Formulaire réactif via Inertia
+// ─── Formulaire ──────────────────────────────────────────────
 const form = useForm({
-    enqueteur_id: '',
+    enqueteur_id: null as number | null,
+    societe_id: null as number | null,
     fiche_number: '',
     conteneur: '',
     immatriculation: '',
@@ -87,14 +87,11 @@ const form = useForm({
     bateau: '',
     bon_livraison: '',
     observations: '',
-    palettes: [] as Array<{ id: number; paletisation_id: string | number; type: string; certif: string }>
+    palettes: [] as Array<{ id: number; paletisation_id: string | number; type: string; certifs: string }>
 });
 
-// ---------------------------------------------------------------------------
-// Palettes disponibles (filtrage des déjà utilisées)
-// ---------------------------------------------------------------------------
+// ─── Filtrage des palettes disponibles ──────────────────────
 const availablePalettesFiltered = computed(() => {
-    // Si on est en édition, on récupère les IDs des palettes de l'expédition courante
     const currentPaletteIds = new Set<number>();
     if (isEditing.value && currentId.value) {
         const currentExpedition = props.expeditions.find(e => e.id === currentId.value);
@@ -106,7 +103,6 @@ const availablePalettesFiltered = computed(() => {
     }
 
     return props.availablePalettes.filter(pal => {
-        // Si la palette est déjà utilisée dans une autre expédition (et pas dans celle qu'on édite), on l'exclut
         if (props.usedPaletteIds.includes(pal.id) && !currentPaletteIds.has(pal.id)) {
             return false;
         }
@@ -114,31 +110,47 @@ const availablePalettesFiltered = computed(() => {
     });
 });
 
-// Ajouter une nouvelle ligne vide
+// ─── Filtrage des enquêteurs pour admin ─────────────────────
+const filteredEnqueteurs = computed(() => {
+    if (!props.isAdmin) return props.enqueteurs;
+    if (!form.societe_id) return [];
+    return props.enqueteurs.filter(e => e.societe_id === form.societe_id);
+});
+
+// ─── Gestion des palettes ──────────────────────────────────
 const addPaletteRow = () => {
     const nextId = form.palettes.length + 1;
     form.palettes.push({
         id: nextId,
         paletisation_id: '',
         type: '-',
-        certif: '-'
+        certifs: '-'
     });
 };
 
-// Auto-complétion automatique des colonnes dès que la palette est sélectionnée
 const handlePaletteChange = (index: number) => {
     const selectedId = form.palettes[index].paletisation_id;
     const item = props.availablePalettes.find(p => p.id == selectedId);
     
     if (item) {
-        form.palettes[index].type = item.type_carton || 'Inconnu';
-        form.palettes[index].certif = item.typeCertification?.nom || 'C';
+        form.palettes[index].type = item.type_carton ? item.type_carton + 'kg' : 'Inconnu';
+        // Récupérer toutes les certifications uniques des lots de cette palette
+        const certSet = new Set<string>();
+        if (item.lots) {
+            item.lots.forEach((lot: any) => {
+                if (lot.certifications) {
+                    lot.certifications.forEach((c: any) => certSet.add(c.nom));
+                }
+            });
+        }
+        form.palettes[index].certifs = certSet.size > 0 ? Array.from(certSet).join(', ') : 'Non certifiée';
     } else {
         form.palettes[index].type = '-';
-        form.palettes[index].certif = '-';
+        form.palettes[index].certifs = '-';
     }
 };
 
+// ─── Ouverture / Fermeture du modal ─────────────────────────
 const openCreateModal = () => {
     isEditing.value = false;
     currentId.value = null;
@@ -147,7 +159,7 @@ const openCreateModal = () => {
         id: i + 1,
         paletisation_id: '',
         type: '-',
-        certif: '-'
+        certifs: '-'
     }));
     isModalOpen.value = true;
 };
@@ -173,11 +185,26 @@ const openEditModal = (fiche: any) => {
     form.palettes = fiche.palettes.map((p: any, idx: number) => ({
         id: idx + 1,
         paletisation_id: p.paletisation_id,
-        type: p.paletisation?.type_carton || '-',
-        certif: p.paletisation?.typeCertification?.nom || '-'
+        type: p.paletisation?.type_carton ? p.paletisation.type_carton + 'kg' : '-',
+        certifs: (() => {
+            const certs = new Set<string>();
+            if (p.paletisation?.lots) {
+                p.paletisation.lots.forEach((lot: any) => {
+                    if (lot.certifications) {
+                        lot.certifications.forEach((c: any) => certs.add(c.nom));
+                    }
+                });
+            }
+            return certs.size > 0 ? Array.from(certs).join(', ') : 'Non certifiée';
+        })()
     }));
 
     isModalOpen.value = true;
+};
+
+const closeModal = () => {
+    isModalOpen.value = false;
+    form.reset();
 };
 
 const submit = () => {
@@ -193,11 +220,6 @@ const submit = () => {
             onSuccess: () => { closeModal(); currentPage.value = 1; }
         });
     }
-};
-
-const closeModal = () => {
-    isModalOpen.value = false;
-    form.reset();
 };
 
 const confirmDelete = (fiche: any) => {
@@ -328,6 +350,7 @@ const confirmDelete = (fiche: any) => {
                 </div>
             </div>
 
+            <!-- Modal -->
             <div v-if="isModalOpen" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                 <div class="bg-[var(--background)] border border-[var(--sidebar-border)] rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto shadow-2xl space-y-6 p-6">
                     
@@ -340,8 +363,22 @@ const confirmDelete = (fiche: any) => {
 
                     <form @submit.prevent="submit" class="space-y-6">
 
+                        <!-- Société (admin uniquement) -->
+                        <div v-if="isAdmin" class="space-y-1.5">
+                            <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                                Société *
+                            </label>
+                            <select v-model="form.societe_id" class="input-line w-full" required>
+                                <option :value="null">— choisir —</option>
+                                <option v-for="s in props.societes" :key="s.id" :value="s.id">
+                                    {{ s.nom }}
+                                </option>
+                            </select>
+                        </div>
+
                         <div class="flex flex-col lg:flex-row gap-6 items-start">
                             
+                            <!-- Colonne gauche : Palettes -->
                             <div class="w-full lg:w-[45%] space-y-3">
                                 <div class="flex justify-between items-center">
                                     <span class="text-[12px] font-bold uppercase tracking-wider">Détail des Palettes</span>
@@ -350,26 +387,35 @@ const confirmDelete = (fiche: any) => {
                                     </button>
                                 </div>
 
-                                <div class="px-6 py-5 space-y-5">
-                                    <div class="space-y-1.5">
+                                <!-- Enquêteur -->
+                                <div class="px-1 py-2">
+                                    <div v-if="isAdmin || isManager" class="space-y-1.5">
                                         <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
                                             Enquêteur Responsable *
                                         </label>
                                         <select v-model="form.enqueteur_id" class="input-line w-full">
-                                            <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                                            <option :value="null">— choisir un enquêteur —</option>
+                                            <option v-for="e in filteredEnqueteurs" :key="e.id" :value="e.id">
                                                 {{ e.prenom }} {{ e.nom }}
                                             </option>
                                         </select>
                                     </div>
+                                    <div v-else class="space-y-1.5">
+                                        <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
+                                            Enquêteur Responsable
+                                        </label>
+                                        <input type="text" class="input-line w-full" disabled :value="props.currentEnqueteurLabel || '—'" />
+                                    </div>
                                 </div>
+
                                 <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm max-h-[500px] overflow-y-auto">
                                     <table class="w-full text-left border-collapse table-fixed">
                                         <thead class="sticky top-0 bg-[var(--brand-green)] text-white text-[12px] font-black uppercase z-10">
                                             <tr>
                                                 <th class="px-2 py-3 w-12 text-center">N°</th>
-                                                <th class="px-3 py-3 text-center w-40">N° Palette</th>
-                                                <th class="px-2 py-3 text-center w-24">Type Carton</th>
-                                                <th class="px-2 py-3 text-center w-16">G/F/C</th>
+                                                <th class="px-3 py-3 text-center w-35">N° Palette</th>
+                                                <th class="px-2 py-3 text-center w-24">Type</th>
+                                                <th class="px-2 py-3 text-center w-21">Certification(s)</th>
                                             </tr>
                                         </thead>
                                         <tbody class="divide-y divide-[var(--sidebar-border)]">
@@ -392,8 +438,8 @@ const confirmDelete = (fiche: any) => {
                                                 <td class="px-2 py-2 border-r border-[var(--sidebar-border)] text-center text-[12px] font-medium">
                                                     {{ p.type }}
                                                 </td>
-                                                <td class="px-2 py-2 text-center text-[12px] font-black text-[var(--brand-green)] uppercase">
-                                                    {{ p.certif }}
+                                                <td class="px-2 py-2 text-center text-[11px] font-bold text-[var(--brand-green)] uppercase">
+                                                    {{ p.certifs }}
                                                 </td>
                                             </tr>
                                         </tbody>
@@ -401,6 +447,7 @@ const confirmDelete = (fiche: any) => {
                                 </div>
                             </div>
 
+                            <!-- Colonne droite : Infos générales -->
                             <div class="w-full lg:w-[55%] space-y-4">
                                 <div class="overflow-hidden rounded-xl border border-[var(--sidebar-border)] bg-[var(--card)] shadow-sm">
                                     <table class="w-full text-left border-collapse">

@@ -13,4 +13,9 @@ trait HasRole {
     public function isEnqueteur() {
         return $this->role->slug === 'enqueteur';
     }
+
+    // Ajoutez ceci :
+    public function isManager() {
+        return $this->role->slug === 'manager'; // Ou Role::MANAGER
+    }
 }

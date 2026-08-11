@@ -18,6 +18,7 @@ use App\Http\Controllers\PaletisationController;
 use App\Http\Controllers\ExpeditionController;
 use App\Http\Controllers\ExportPdfController;
 use App\Http\Controllers\StatistiqueController;
+use App\Http\Controllers\SocieteController;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -133,6 +134,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/statistiques/{slug?}', [StatistiqueController::class, 'index'])->name('statistiques.index');
     
-    
+    Route::middleware(['auth'])->group(function () {
+        Route::resource('societes', SocieteController::class)->only([
+            'index', 'store', 'update', 'destroy'
+        ]);
+    });
 
 require __DIR__.'/settings.php';

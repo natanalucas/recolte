@@ -14,11 +14,14 @@ class FicheReception extends Model
         'parcelle_id',
         'voiture',
         'commune',
-        'caissette',              // nombre saisi
-        'pourcentage_dechet',     // % de déchet constaté
+        'caissette',
+        'pourcentage_dechet',
         'collecte',
         'depart_champ',
-        'retour_station'
+        'retour_station',
+        'calibre',
+        'qualite_livraison',
+        'societe_id', // ajout
     ];
 
     protected $casts = [
@@ -36,23 +39,27 @@ class FicheReception extends Model
         });
     }
 
+    // Relation corrigée : Enqueteur, pas User
     public function enqueteur(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'enqueteur_id');
+        return $this->belongsTo(Enqueteur::class);
     }
 
-    public function parcelle()
+    public function parcelle(): BelongsTo
     {
         return $this->belongsTo(Parcelle::class);
     }
 
-    // Relation avec Soufrage (si nécessaire)
+    public function societe(): BelongsTo
+    {
+        return $this->belongsTo(Societe::class);
+    }
+
     public function soufrages()
     {
         return $this->hasMany(Soufrage::class, 'reception_id');
     }
 
-    // Accesseur pour la quantité en kg
     public function getQuantiteKgAttribute(): ?float
     {
         if ($this->caissette && $this->poids_par_caissette) {

@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { ref, reactive, computed } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import HeaderFiche from './HeaderFiche.vue';
 import {
     Trash2, Plus, Save, CheckCircle2,
-    Pencil, X, AlertTriangle, Weight
+    Pencil, X, AlertTriangle, Weight, ChevronDown
 } from 'lucide-vue-next';
 
 const breadcrumbs: BreadcrumbItem[] = [];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Parcelle { id: number; num: string; }
+interface Parcelle {
+    id: number;
+    num: string;
+    producteur: { id: number; nom: string; prenom: string; societe_id: number } | null;
+}
 
 interface FicheReception {
     id:                  number;
@@ -29,6 +33,17 @@ interface FicheReception {
     collecte:            string | null;
     depart_champ:        string | null;
     retour_station:      string | null;
+    calibre:             string | null;
+    qualite_livraison:   string | null;
+    societe_id:          number | null;
+}
+
+interface Enqueteur {
+    id: number;
+    nom: string;
+    prenom: string;
+    poste: string;
+    societe_id: number | null;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -42,10 +57,22 @@ const props = defineProps<{
         per_page: number;
         total: number;
         links: { url: string | null; label: string; active: boolean }[];
+        from: number | null;
+        to: number | null;
     };
     poids_par_caissette: number;
-    enqueteurs: { id: number; nom: string; prenom: string; poste: string }[];
+    enqueteurs: Enqueteur[];
+    societes: { id: number; nom: string }[];
+    isAdmin:             boolean;
+    isManager:           boolean;
+    currentEnqueteurId:  number | null;
+    currentEnqueteurLabel: string | null;
+    userSocieteId:       number | null;
 }>();
+
+// ─── Rôle courant ─────────────────────────────────────────────────────────────
+
+const isEnqueteurRole = computed(() => !props.isAdmin && !props.isManager);
 
 // ─── Poids global ─────────────────────────────────────────────────────────────
 
@@ -69,8 +96,10 @@ const savePoids = () => {
 
 const showModal      = ref(false);
 const editingFicheId = ref<number | null>(null);
+
 const form = reactive({
     enqueteur_id:        null as number | null,
+    societe_id:          null as number | null,
     parcelle_id:         null as number | null,
     voiture:             '',
     commune:             '',
@@ -79,11 +108,59 @@ const form = reactive({
     collecte:            new Date().toISOString().slice(0, 16),
     depart_champ:        '',
     retour_station:      '',
+    calibre:             '',
+    qualite_livraison:   '',
 });
 
 const modalSaving  = ref(false);
 const modalError   = ref<string | null>(null);
 const modalSuccess = ref(false);
+
+// ─── Filtrage dynamique (incluant toujours l'élément actuel) ─────────────────
+
+const filteredEnqueteurs = computed(() => {
+    if (!props.isAdmin) return props.enqueteurs;
+    
+    let filtered = props.enqueteurs;
+    if (form.societe_id) {
+        filtered = filtered.filter(e => e.societe_id === form.societe_id);
+    }
+    
+    // Ajouter l'enquêteur actuel s'il n'est pas dans la liste
+    if (form.enqueteur_id) {
+        const current = props.enqueteurs.find(e => e.id === form.enqueteur_id);
+        if (current && !filtered.some(e => e.id === current.id)) {
+            filtered.push(current);
+        }
+    }
+    return filtered;
+});
+
+const filteredParcelles = computed(() => {
+    if (!props.isAdmin) return props.parcelles;
+    
+    let filtered = props.parcelles;
+    if (form.societe_id) {
+        filtered = filtered.filter(p => p.producteur?.societe_id === form.societe_id);
+    }
+    
+    // Ajouter la parcelle actuelle si elle n'est pas dans la liste
+    if (form.parcelle_id) {
+        const current = props.parcelles.find(p => p.id === form.parcelle_id);
+        if (current && !filtered.some(p => p.id === current.id)) {
+            filtered.push(current);
+        }
+    }
+    return filtered;
+});
+
+// ─── Watcher : réinitialisation des champs dépendants ──────────────────────
+watch(() => form.societe_id, (newVal, oldVal) => {
+    if (props.isAdmin && newVal !== oldVal) {
+        form.enqueteur_id = null;
+        form.parcelle_id = null;
+    }
+});
 
 // ─── Calcul des kg ──────────────────────────────────────────────────────────
 
@@ -98,8 +175,10 @@ const quantiteKg = computed(() => {
 
 const openAddModal = () => {
     editingFicheId.value = null;
+    const defaultSocieteId = props.isAdmin ? null : props.userSocieteId;
     Object.assign(form, {
-        enqueteur_id:        null,
+        enqueteur_id:        isEnqueteurRole.value ? props.currentEnqueteurId : null,
+        societe_id:          defaultSocieteId,
         parcelle_id:         null,
         voiture:             '',
         commune:             '',
@@ -108,6 +187,8 @@ const openAddModal = () => {
         collecte:            new Date().toISOString().slice(0, 16),
         depart_champ:        '',
         retour_station:      '',
+        calibre:             '',
+        qualite_livraison:   '',
     });
     modalError.value   = null;
     modalSuccess.value = false;
@@ -116,8 +197,10 @@ const openAddModal = () => {
 
 const openEditModal = (fiche: FicheReception) => {
     editingFicheId.value = fiche.id;
+    const societeId = props.isAdmin ? (fiche.societe_id ?? null) : props.userSocieteId;
     Object.assign(form, {
-        enqueteur_id:        fiche.enqueteur_id ?? null,
+        enqueteur_id:        isEnqueteurRole.value ? props.currentEnqueteurId : (fiche.enqueteur_id ?? null),
+        societe_id:          societeId,
         parcelle_id:         fiche.parcelle_id ?? null,
         voiture:             fiche.voiture ?? '',
         commune:             fiche.commune ?? '',
@@ -126,6 +209,8 @@ const openEditModal = (fiche: FicheReception) => {
         collecte:            fiche.collecte?.slice(0, 16) ?? '',
         depart_champ:        fiche.depart_champ?.slice(0, 16) ?? '',
         retour_station:      fiche.retour_station?.slice(0, 16) ?? '',
+        calibre:             fiche.calibre ?? '',
+        qualite_livraison:   fiche.qualite_livraison ?? '',
     });
     modalError.value   = null;
     modalSuccess.value = false;
@@ -200,6 +285,11 @@ const fmtDate = (d: string | null) => {
 
 const parcelleNum = (fiche: FicheReception) =>
     fiche.parcelle?.num ?? props.parcelles.find(p => p.id === fiche.parcelle_id)?.num ?? '—';
+
+const goToPage = (url: string | null) => {
+    if (!url) return;
+    router.get(url, {}, { preserveScroll: true, preserveState: true, replace: true });
+};
 </script>
 
 <template>
@@ -271,22 +361,24 @@ const parcelleNum = (fiche: FicheReception) =>
                             <tr class="bg-[var(--brand-green)]/80 text-white
                                        text-[10px] font-black uppercase tracking-wider">
                                 <th class="px-3 py-3 text-center border-r border-white/10">N° Fiche</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Parcelle</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Caissettes</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">N° Parcelle</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Qtté Caissette Livrée</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10 bg-[var(--brand-green)]/60">Quantité (kg)</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Déchet (%)</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Voiture</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Commune</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Calibre</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Qualité livraison</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">N° Immatriculation Voiture</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Commune et District</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Collecte</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Départ champ</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Retour station</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Reception station</th>
                                 <th class="px-3 py-3 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-[var(--sidebar-border)]">
 
                             <tr v-if="props.fiches.total === 0">
-                                <td colspan="11"
+                                <td colspan="13"
                                     class="py-12 text-center text-[12px] font-bold opacity-30 uppercase tracking-widest">
                                     Aucune fiche enregistrée
                                 </td>
@@ -324,6 +416,14 @@ const parcelleNum = (fiche: FicheReception) =>
                                         {{ fiche.pourcentage_dechet }}%
                                     </span>
                                     <span v-else>—</span>
+                                </td>
+
+                                <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+                                    {{ fiche.calibre || '—' }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">
+                                    {{ fiche.qualite_livraison || '—' }}
                                 </td>
 
                                 <td class="px-3 py-2 text-center border-r border-[var(--sidebar-border)]/30">
@@ -380,7 +480,7 @@ const parcelleNum = (fiche: FicheReception) =>
                     <template v-for="link in props.fiches.links" :key="link.label">
                         <button
                             v-if="link.url"
-                            @click="router.get(link.url, {}, { preserveScroll: true })"
+                            @click="goToPage(link.url)"
                             :class="[
                                 'h-8 min-w-[2rem] px-2 rounded-lg text-[11px] font-black uppercase transition-all',
                                 link.active
@@ -400,7 +500,7 @@ const parcelleNum = (fiche: FicheReception) =>
         </div>
 
         <!-- ════════════════════════════════════════════════════════════════
-             MODAL FORMULAIRE (une seule ligne)
+             MODAL FORMULAIRE
         ════════════════════════════════════════════════════════════════ -->
         <Teleport to="body">
             <Transition name="modal">
@@ -426,17 +526,37 @@ const parcelleNum = (fiche: FicheReception) =>
 
                         <div class="p-6 space-y-5">
 
-                            <!-- ── Enquêteur ──────────────────────────────── -->
-                            <div class="space-y-1.5">
+                            <!-- ── Société (admin uniquement) ──────────────── -->
+                            <div v-if="isAdmin" class="space-y-1.5">
                                 <label class="text-[12px] font-black uppercase tracking-wider">
-                                    Enquêteur
+                                    Société <span class="text-red-500">*</span>
                                 </label>
-                                <select v-model="form.enqueteur_id" class="input-line w-full">
+                                <select v-model="form.societe_id" class="input-line w-full" required>
                                     <option :value="null">— choisir —</option>
-                                    <option v-for="e in props.enqueteurs" :key="e.id" :value="e.id">
+                                    <option v-for="s in props.societes" :key="s.id" :value="s.id">
+                                        {{ s.nom }}
+                                    </option>
+                                </select>
+                            </div>
+
+                            <!-- ── Enquêteur ──────────────────────────────── -->
+                            <div class="space-y-1.5" v-if="isAdmin || isManager">
+                                <label class="text-[12px] font-black uppercase tracking-wider">
+                                    Enquêteur <span class="text-red-500">*</span>
+                                </label>
+                                <select v-model="form.enqueteur_id" class="input-line w-full" required>
+                                    <option :value="null">— choisir —</option>
+                                    <option v-for="e in filteredEnqueteurs" :key="e.id" :value="e.id">
                                         {{ e.prenom }} {{ e.nom }}
                                     </option>
                                 </select>
+                            </div>
+
+                            <!-- ENQUÊTEUR : champ désactivé -->
+                            <div v-else class="space-y-1.5">
+                                <label class="text-[12px] font-black uppercase tracking-wider">Enquêteur</label>
+                                <input type="text" class="input-line w-full" disabled
+                                    :value="props.currentEnqueteurLabel || '—'" />
                             </div>
 
                             <!-- ── Champs de la fiche ────────────────────── -->
@@ -448,7 +568,7 @@ const parcelleNum = (fiche: FicheReception) =>
                                     </label>
                                     <select v-model="form.parcelle_id" class="input-line w-full">
                                         <option :value="null">— choisir —</option>
-                                        <option v-for="p in props.parcelles" :key="p.id" :value="p.id">
+                                        <option v-for="p in filteredParcelles" :key="p.id" :value="p.id">
                                             {{ p.num }}
                                         </option>
                                     </select>
@@ -456,23 +576,23 @@ const parcelleNum = (fiche: FicheReception) =>
 
                                 <div class="space-y-1.5">
                                     <label class="text-[12px] font-black uppercase tracking-wider">
-                                        N° Voiture
+                                        N° Immatriculation Voiture
                                     </label>
                                     <input v-model="form.voiture" type="text" class="input-line w-full" />
                                 </div>
 
                                 <div class="space-y-1.5">
                                     <label class="text-[12px] font-black uppercase tracking-wider">
-                                        Commune / District
+                                        Commune et District
                                     </label>
                                     <input v-model="form.commune" type="text" class="input-line w-full" />
                                 </div>
 
                                 <div class="space-y-1.5">
                                     <label class="text-[12px] font-black uppercase tracking-wider">
-                                        Nb caissettes livrées
+                                        Qtté Caissette Livrée
                                     </label>
-                                    <input v-model="form.caissette" type="number" min="0" class="input-line w-full" />
+                                    <input v-model="form.caissette" type="number" min="0" max="250" class="input-line w-full" />
                                 </div>
 
                                 <div class="space-y-1.5">
@@ -502,6 +622,20 @@ const parcelleNum = (fiche: FicheReception) =>
                                         </span>
                                     </div>
                                 </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        Calibre
+                                    </label>
+                                    <input v-model="form.calibre" type="text" class="input-line w-full" />
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        Qualité livraison
+                                    </label>
+                                    <input v-model="form.qualite_livraison" type="text" class="input-line w-full" />
+                                </div>
                             </div>
 
                             <!-- ── Dates ──────────────────────────────────── -->
@@ -517,7 +651,7 @@ const parcelleNum = (fiche: FicheReception) =>
                                            class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                 </div>
                                 <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                                    <label class="text-[12px] font-black uppercase tracking-wider">Retour station</label>
+                                    <label class="text-[12px] font-black uppercase tracking-wider">Reception station</label>
                                     <input v-model="form.retour_station" type="datetime-local"
                                            class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                 </div>

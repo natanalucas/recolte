@@ -21,7 +21,8 @@ import {
     BadgeCheck,
     Award,
     Users,
-    ChartColumn
+    ChartColumn,
+    Building
 } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -146,6 +147,12 @@ const mainNavItems: NavItem[] = [
         title: 'Type de Certifications',
         href: '/type-certifications',
         icon: Award
+    }
+    ,
+    {
+        title: 'Sociétés',
+        href: '/societes',
+        icon: Building
     }
 ];
 const footerNavItems: NavItem[] = [

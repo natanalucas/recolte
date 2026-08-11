@@ -11,6 +11,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use App\Traits\HasRole;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
@@ -33,6 +34,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role_id', // N'oubliez pas de l'ajouter ici
+        'societe_id'
     ];
 
     protected function casts(): array
@@ -48,9 +50,13 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Role::class);
     }
-
     
-protected function name(): Attribute
+    public function societe(): BelongsTo
+    {
+        return $this->belongsTo(Societe::class);
+    }
+    
+    protected function name(): Attribute
     {
         return Attribute::make(
             set: fn (string $value) => Str::title(mb_strtolower($value)),

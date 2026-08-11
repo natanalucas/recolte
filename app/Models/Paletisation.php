@@ -13,40 +13,34 @@ class Paletisation extends Model
         'fiche_number',
         'num_palette',
         'type_carton',
-        'type_certification_id',
         'debut',
         'fin',
+        'societe_id',
+        // 'type_certification_id' supprimé
     ];
 
     protected $casts = [
         'debut' => 'datetime',
         'fin'   => 'datetime',
     ];
-    /**
-     * Les 3 lots rattachés à cette palette, toujours triés par numéro de lot.
-     */
+
     public function lots(): HasMany
     {
         return $this->hasMany(PaletisationLot::class)->orderBy('lot_number');
     }
 
-    public function typeCertification(): BelongsTo
-    {
-        return $this->belongsTo(TypeCertification::class);
-    }
-
     public function enqueteur(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'enqueteur_id');
+        return $this->belongsTo(Enqueteur::class, 'enqueteur_id');
     }
 
+    public function societe(): BelongsTo
+    {
+        return $this->belongsTo(Societe::class);
+    }
 
     public function expeditionPalettes()
     {
         return $this->hasMany(ExpeditionPalette::class);
     }
-
-
-
-
 }
