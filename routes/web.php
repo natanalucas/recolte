@@ -140,4 +140,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ]);
     });
 
+    Route::post('/triage/{triage}/facture', [TriageController::class, 'facture'])
+    ->name('triage.facture');
+
 require __DIR__.'/settings.php';

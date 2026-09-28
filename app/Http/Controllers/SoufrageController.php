@@ -159,22 +159,31 @@ class SoufrageController extends Controller
 
         // Dans store()
         DB::transaction(function () use (&$validatedData, $societeId) {
-            $code = $validatedData['code'] ?? null;
+            $code       = $validatedData['code'] ?? null;
             $parcelleId = $validatedData['parcelle_id'] ?? null;
 
             if (empty($code)) {
                 throw new \Exception("Le code de traçabilité est obligatoire.");
             }
 
+            // ── Résolution du numéro de fiche de réception ──
+            $receptionNumber = $validatedData['fiche_number'] ?? null;
+
+            if (empty($receptionNumber) && !empty($validatedData['reception_id'])) {
+                $receptionNumber = FicheReception::whereKey($validatedData['reception_id'])
+                    ->value('fiche_number');
+            }
+
             $codeTraca = CodeTraca::firstOrCreate(
                 ['code' => $code],
                 [
-                    'parcelle_id' => $parcelleId,
-                    'societe_id'  => $societeId, // <-- on stocke la société
+                    'parcelle_id'      => $parcelleId,
+                    'societe_id'       => $societeId,
+                    'reception_number' => $receptionNumber,
                 ]
             );
 
-            // Mise à jour si parcelle ou société change
+            // ── Mise à jour ciblée ──
             $updateData = [];
             if ($parcelleId && $codeTraca->parcelle_id !== $parcelleId) {
                 $updateData['parcelle_id'] = $parcelleId;
@@ -182,12 +191,20 @@ class SoufrageController extends Controller
             if ($societeId && $codeTraca->societe_id !== $societeId) {
                 $updateData['societe_id'] = $societeId;
             }
+            if (!empty($receptionNumber) && $codeTraca->reception_number !== $receptionNumber) {
+                $updateData['reception_number'] = $receptionNumber;
+            }
             if (!empty($updateData)) {
                 $codeTraca->update($updateData);
             }
 
             $validatedData['code_traca_id'] = $codeTraca->id;
-            unset($validatedData['code']);
+
+            // ── Nettoyage : ces champs ne doivent pas être insérés dans Soufrage ──
+            unset(
+                $validatedData['code'],
+                $validatedData['fiche_number'],
+            );
 
             Soufrage::create($validatedData);
         });
@@ -198,6 +215,7 @@ class SoufrageController extends Controller
     public function update(Request $request, Soufrage $soufrage)
     {
         $validatedData = $request->validate([
+            'fiche_number' => 'nullable|string|max:100',
             'cycle'           => 'nullable|string|max:100',
             'box'             => 'nullable|numeric|max:50',
             'concent'         => 'nullable|string|max:100',
@@ -226,16 +244,24 @@ class SoufrageController extends Controller
         }
 
         DB::transaction(function () use (&$validatedData, $soufrage, $societeId) {
-            // Si un nouveau code est fourni, on le gère
             if (!empty($validatedData['code'])) {
-                $code = $validatedData['code'];
+                $code       = $validatedData['code'];
                 $parcelleId = $validatedData['parcelle_id'] ?? $soufrage->parcelle_id;
+
+                // ── Résolution du numéro de fiche de réception ──
+                $receptionNumber = $validatedData['fiche_number'] ?? null;
+
+                if (empty($receptionNumber) && !empty($validatedData['reception_id'])) {
+                    $receptionNumber = FicheReception::whereKey($validatedData['reception_id'])
+                        ->value('fiche_number');
+                }
 
                 $codeTraca = CodeTraca::firstOrCreate(
                     ['code' => $code],
                     [
-                        'parcelle_id' => $parcelleId,
-                        'societe_id'  => $societeId,
+                        'parcelle_id'      => $parcelleId,
+                        'societe_id'       => $societeId,
+                        'reception_number' => $receptionNumber,
                     ]
                 );
 
@@ -246,15 +272,20 @@ class SoufrageController extends Controller
                 if ($societeId && $codeTraca->societe_id !== $societeId) {
                     $updateData['societe_id'] = $societeId;
                 }
+                if (!empty($receptionNumber) && $codeTraca->reception_number !== $receptionNumber) {
+                    $updateData['reception_number'] = $receptionNumber;
+                }
                 if (!empty($updateData)) {
                     $codeTraca->update($updateData);
                 }
 
                 $validatedData['code_traca_id'] = $codeTraca->id;
             }
-            // Si on ne modifie pas le code, on ne touche pas à code_traca_id
 
-            unset($validatedData['code']);
+            unset(
+                $validatedData['code'],
+                $validatedData['fiche_number'],
+            );
 
             $soufrage->update($validatedData);
         });

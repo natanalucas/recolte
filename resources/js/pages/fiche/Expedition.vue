@@ -119,6 +119,13 @@ const filteredEnqueteurs = computed(() => {
 
 // ─── Gestion des palettes ──────────────────────────────────
 const addPaletteRow = () => {
+    if (form.palettes.length >= 20) {
+        // Optionnel : notifier l'utilisateur
+        console.warn('Limite de 20 palettes atteinte');
+        // ou avec une alerte : alert('Vous ne pouvez pas ajouter plus de 20 palettes');
+        return;
+    }
+
     const nextId = form.palettes.length + 1;
     form.palettes.push({
         id: nextId,

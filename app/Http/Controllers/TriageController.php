@@ -10,7 +10,9 @@ use App\Models\Enqueteur;
 use App\Models\CodeTraca;
 use App\Models\Parcelle;
 use App\Models\Societe;
+use App\Models\FicheReception;
 use Illuminate\Support\Facades\DB;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class TriageController extends Controller
 {
@@ -27,6 +29,58 @@ class TriageController extends Controller
         }
 
         return $user->societe_id;
+    }
+
+    public function facture(Request $request, Triage $triage)
+    {
+        $validated = $request->validate([
+            'prix_unitaire_caissette' => 'required|numeric|min:0',
+            'prix_unitaire_produit'   => 'required|numeric|min:0',
+            'numero_facture'          => 'required|string|max:100',
+            'lieu'                    => 'required|string|max:150',
+        ]);
+
+        $triage->load('codeTraca.parcelle.producteur', 'codeTraca.societe', 'certifications');
+
+        $codeTraca  = $triage->codeTraca;
+        $parcelle   = $codeTraca?->parcelle;
+        $producteur = $parcelle?->producteur;
+        $societe    = $codeTraca?->societe;
+
+        // ── Récupération de la fiche de réception liée ──
+        $reception = null;
+        if ($codeTraca?->reception_number) {
+            $reception = FicheReception::where('fiche_number', $codeTraca->reception_number)->first();
+        }
+
+        $nbCaissettes   = (int) ($reception?->caissette ?? $triage->nombre ?? 0);
+        $poidsUnitaire  = (float) ($reception?->poids_par_caissette ?? ($triage->type_carton === '2kg' ? 2 : 5.5));
+        $kg             = $nbCaissettes * $poidsUnitaire;
+
+        $totalCaissette = $validated['prix_unitaire_caissette'] * $nbCaissettes;
+        $totalProduit   = $validated['prix_unitaire_produit']   * $kg;
+        $total          = $totalCaissette + $totalProduit;
+
+        $pdf = Pdf::loadView('pdf.facture', [
+            'triage'                => $triage,
+            'producteur'            => $producteur,
+            'parcelle'              => $parcelle,
+            'societe'               => $societe,
+            'reception'             => $reception,
+            'nbCaissettes'          => $nbCaissettes,
+            'poidsUnitaire'         => $poidsUnitaire,
+            'kg'                    => $kg,
+            'prixUnitaireCaissette' => $validated['prix_unitaire_caissette'],
+            'prixUnitaireProduit'   => $validated['prix_unitaire_produit'],
+            'numeroFacture'         => $validated['numero_facture'],
+            'lieu'                  => $validated['lieu'],
+            'dateFacture'           => now(),
+            'totalCaissette'        => $totalCaissette,
+            'totalProduit'          => $totalProduit,
+            'total'                 => $total,
+        ]);
+
+        return $pdf->download("facture-litchi-{$triage->id}.pdf");
     }
 
     public function index()

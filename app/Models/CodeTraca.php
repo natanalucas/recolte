@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CodeTraca extends Model
 {
     protected $table = 'code_traca';
-    protected $fillable = ['code', 'parcelle_id', 'societe_id'];
+    protected $fillable = ['code', 'parcelle_id', 'societe_id', 'reception_number'];
 
     public function parcelle()
     {

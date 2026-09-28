@@ -4,7 +4,10 @@ import { ref, reactive, computed, watch, nextTick } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import HeaderFiche from './HeaderFiche.vue';
-import { Trash2, Plus, Save, CheckCircle2, Pencil, X, AlertTriangle, ChevronDown, QrCode } from 'lucide-vue-next';
+import {
+    Trash2, Plus, Save, CheckCircle2, Pencil, X, AlertTriangle,
+    ChevronDown, QrCode, FileText, Download
+} from 'lucide-vue-next';
 import QRCode from 'qrcode';
 
 const breadcrumbs: BreadcrumbItem[] = [];
@@ -19,6 +22,8 @@ interface Producteur {
     id: number;
     nom: string;
     prenom: string;
+    adresse?: string | null;
+    phone?: string | null;
     societe_id: number;
 }
 
@@ -40,7 +45,7 @@ interface TriageRecord {
     id: number;
     code_traca_id: number;
     type_carton: '2kg' | '5.5kg';
-    certifications: TypeCertification[]; // ← maintenant un tableau
+    certifications: TypeCertification[];
     debut: string;
     fin: string;
     tapis: number[];
@@ -92,7 +97,7 @@ const ficheNumber = ref('');
 const makeForm = () => ({
     code_traca_id: null as number | null,
     type_carton: '5.5kg' as '2kg' | '5.5kg',
-    certifications: [] as number[], // ← tableau d'IDs
+    certifications: [] as number[],
     debut: new Date().toISOString().slice(0, 16),
     fin: '',
     tapis: [] as number[],
@@ -213,7 +218,6 @@ const editFilteredCertifications = computed(() => {
 
 const openEdit = (row: TriageRecord) => {
     editingId.value = row.id;
-    // On récupère les IDs des certifications existantes
     const certIds = row.certifications?.map(c => c.id) ?? [];
     Object.assign(editForm, {
         code_traca_id: row.code_traca_id,
@@ -363,6 +367,123 @@ const downloadQr = () => {
     link.click();
 };
 
+// ═══════════════════════════════════════════════════════════════════════
+// ── FACTURE ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+
+const factureTarget = ref<TriageRecord | null>(null);
+const showFactureModal = ref(false);
+const factureSaving = ref(false);
+const factureError = ref<string | null>(null);
+
+const factureForm = reactive({
+    prix_unitaire_caissette: null as number | null,
+    prix_unitaire_produit:   null as number | null,
+    numero_facture:          '',   // ← NOUVEAU
+    lieu:                    '',   // ← NOUVEAU
+});
+
+const openFacture = (row: TriageRecord) => {
+    factureTarget.value = row;
+    factureForm.prix_unitaire_caissette = null;
+    factureForm.prix_unitaire_produit   = null;
+    factureForm.numero_facture          = '';   // ← reset
+    factureForm.lieu                    = '';   // ← reset
+    factureError.value = null;
+    showFactureModal.value = true;
+};
+
+const closeFacture = () => {
+    showFactureModal.value = false;
+    factureTarget.value = null;
+    factureError.value = null;
+};
+
+// Poids par carton selon le type
+const facturePoidsCarton = computed(() => {
+    return factureTarget.value?.type_carton === '2kg' ? 2 : 5.5;
+});
+
+const factureNbCaissettes = computed(() => factureTarget.value?.nombre ?? 0);
+const factureKg           = computed(() => factureNbCaissettes.value * facturePoidsCarton.value);
+
+const factureTotalCaissette = computed(() => {
+    if (!factureForm.prix_unitaire_caissette || !factureNbCaissettes.value) return 0;
+    return factureForm.prix_unitaire_caissette * factureNbCaissettes.value;
+});
+
+const factureTotalProduit = computed(() => {
+    if (!factureForm.prix_unitaire_produit || !factureKg.value) return 0;
+    return factureForm.prix_unitaire_produit * factureKg.value;
+});
+
+const factureTotal = computed(() => factureTotalCaissette.value + factureTotalProduit.value);
+
+// Producteur lié (via code_traca → parcelle → producteur)
+const factureProducteur = computed(() => {
+    return factureTarget.value?.code_traca?.parcelle?.producteur ?? null;
+});
+
+const fmtMoney = (n: number) =>
+    n.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+const submitFacture = async () => {
+    if (!factureForm.prix_unitaire_caissette || !factureForm.prix_unitaire_produit) {
+        factureError.value = 'Veuillez renseigner les deux prix.';
+        return;
+    }
+    if (!factureForm.numero_facture || !factureForm.lieu) {
+        factureError.value = 'Veuillez renseigner le numéro de facture et le lieu.';
+        return;
+    }
+
+    factureSaving.value = true;
+    factureError.value = null;
+
+    try {
+        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '';
+
+        const res = await fetch(`/triage/${factureTarget.value.id}/facture`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/pdf',
+                'X-CSRF-TOKEN': csrf,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({
+                prix_unitaire_caissette: factureForm.prix_unitaire_caissette,
+                prix_unitaire_produit:   factureForm.prix_unitaire_produit,
+                numero_facture:          factureForm.numero_facture,   // ← NOUVEAU
+                lieu:                    factureForm.lieu,             // ← NOUVEAU
+            }),
+        });
+
+        if (!res.ok) {
+            factureError.value = 'Erreur lors de la génération du PDF.';
+            factureSaving.value = false;
+            return;
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `facture-litchi-${factureTarget.value.id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        factureSaving.value = false;
+        closeFacture();
+    } catch (e) {
+        console.error(e);
+        factureError.value = 'Erreur réseau.';
+        factureSaving.value = false;
+    }
+};
+
 // ── Helpers ─────────────────────────────────────────────
 const fmtDate = (d: string | null) => {
     if (!d) return '—';
@@ -386,7 +507,6 @@ const goToPage = (url: string | null) => {
     router.get(url, {}, { preserveScroll: true, preserveState: true, replace: true });
 };
 
-// ── Fonction pour formater les certifications dans le tableau ──
 const formatCertifications = (certs: TypeCertification[] | undefined) => {
     if (!certs || certs.length === 0) return '—';
     return certs.map(c => c.nom).join(', ');
@@ -665,6 +785,11 @@ const formatCertifications = (certs: TypeCertification[] | undefined) => {
                                                     title="Générer QR Code">
                                                     <QrCode class="w-3 h-3" /> QR
                                                 </button>
+                                                <button @click="openFacture(row)"
+                                                    class="inline-flex items-center gap-1 px-3 py-1 rounded-lg border border-[var(--sidebar-border)] text-[10px] font-black uppercase hover:border-[var(--brand-orange)] hover:text-[var(--brand-orange)] transition-all"
+                                                    title="Générer Facture PDF">
+                                                    <FileText class="w-3 h-3" /> Facture
+                                                </button>
                                                 <button @click="confirmDelete(row)"
                                                     class="p-1.5 rounded-lg border border-[var(--sidebar-border)] text-[10px] hover:border-red-500 hover:text-red-500 transition-all">
                                                     <Trash2 class="w-3 h-3" />
@@ -915,6 +1040,151 @@ const formatCertifications = (certs: TypeCertification[] | undefined) => {
                                 </svg>
                                 Télécharger PNG
                             </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Modal Facture ── -->
+            <div v-if="showFactureModal" class="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-50 p-4"
+                @click.self="closeFacture">
+                <div class="bg-[var(--card)] border border-[var(--sidebar-border)] rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden">
+                    <div class="px-6 py-4 bg-[var(--brand-orange)] flex items-center justify-between">
+                        <h2 class="text-[13px] font-black uppercase tracking-widest text-white flex items-center gap-2">
+                            <FileText class="w-4 h-4" />
+                            Facture — Lot {{ factureTarget?.code_traca?.code ?? '—' }}
+                        </h2>
+                        <button @click="closeFacture" class="text-white/70 hover:text-white transition">
+                            <X class="w-5 h-5" />
+                        </button>
+                    </div>
+
+                    <div class="p-6 space-y-5">
+                        <!-- Info producteur -->
+                        <div class="p-4 rounded-2xl bg-[var(--brand-green)]/5 border border-[var(--brand-green)]/20">
+                            <p class="text-[10px] font-black uppercase tracking-widest opacity-50 mb-2">
+                                Informations du vendeur
+                            </p>
+                            <div class="grid grid-cols-3 gap-3 text-[12px]">
+                                <div>
+                                    <p class="text-[10px] font-black uppercase opacity-40">Nom / Société</p>
+                                    <p class="font-black">
+                                        {{ factureProducteur
+                                            ? `${factureProducteur.prenom} ${factureProducteur.nom}`.trim()
+                                            : '—' }}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-black uppercase opacity-40">Adresse</p>
+                                    <p class="font-bold">{{ factureProducteur?.adresse || '—' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-black uppercase opacity-40">Téléphone</p>
+                                    <p class="font-bold">{{ factureProducteur?.phone || '—' }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Prix unitaires -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        Numéro de facture <span class="text-red-500">*</span>
+                                    </label>
+                                    <input v-model="factureForm.numero_facture" type="text"
+                                        class="input-line w-full" placeholder="Ex: FAC-2025-001" />
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">
+                                        Lieu <span class="text-red-500">*</span>
+                                    </label>
+                                    <input v-model="factureForm.lieu" type="text"
+                                        class="input-line w-full" placeholder="Ex: Antananarivo" />
+                                </div>
+                            </div>
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-black uppercase tracking-wider">
+                                    Prix unitaire caissette <span class="text-red-500">*</span>
+                                </label>
+                                <div class="flex items-center gap-1">
+                                    <input v-model="factureForm.prix_unitaire_caissette" type="number" min="0" step="0.01"
+                                        class="input-line w-full" placeholder="0" />
+                                    <span class="text-[12px] font-bold">Ar</span>
+                                </div>
+                            </div>
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-black uppercase tracking-wider">
+                                    Prix unitaire produit <span class="text-red-500">*</span>
+                                </label>
+                                <div class="flex items-center gap-1">
+                                    <input v-model="factureForm.prix_unitaire_produit" type="number" min="0" step="0.01"
+                                        class="input-line w-full" placeholder="0" />
+                                    <span class="text-[12px] font-bold">Ar/kg</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Récapitulatif -->
+                        <div class="rounded-2xl border border-[var(--sidebar-border)] overflow-hidden">
+                            <table class="w-full text-[12px]">
+                                <thead class="bg-[var(--brand-green)]/10">
+                                    <tr class="text-[10px] font-black uppercase tracking-wider">
+                                        <th class="px-4 py-2 text-left">Désignation</th>
+                                        <th class="px-4 py-2 text-center">Qté</th>
+                                        <th class="px-4 py-2 text-center">P.U.</th>
+                                        <th class="px-4 py-2 text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-[var(--sidebar-border)]/40">
+                                    <tr>
+                                        <td class="px-4 py-2 font-black">Caissettes ({{ factureTarget?.type_carton }})</td>
+                                        <td class="px-4 py-2 text-center">{{ factureNbCaissettes }}</td>
+                                        <td class="px-4 py-2 text-center">{{ fmtMoney(factureForm.prix_unitaire_caissette ?? 0) }}</td>
+                                        <td class="px-4 py-2 text-right font-black">{{ fmtMoney(factureTotalCaissette) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-2 font-black">Produit (litchi)</td>
+                                        <td class="px-4 py-2 text-center">{{ factureKg.toFixed(2) }} kg</td>
+                                        <td class="px-4 py-2 text-center">{{ fmtMoney(factureForm.prix_unitaire_produit ?? 0) }}</td>
+                                        <td class="px-4 py-2 text-right font-black">{{ fmtMoney(factureTotalProduit) }}</td>
+                                    </tr>
+                                    <tr class="bg-[var(--brand-orange)]/10">
+                                        <td colspan="3" class="px-4 py-2 text-right font-black uppercase tracking-widest text-[11px]">
+                                            Total général
+                                        </td>
+                                        <td class="px-4 py-2 text-right font-black text-[var(--brand-orange)] text-[13px]">
+                                            {{ fmtMoney(factureTotal) }} Ar
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Footer -->
+                        <div class="flex items-center justify-between pt-2 border-t border-[var(--sidebar-border)]/30">
+                            <p v-if="factureError" class="text-[12px] font-bold text-red-500">
+                                ⚠️ {{ factureError }}
+                            </p>
+                            <span v-else class="text-[11px] font-bold opacity-50 uppercase tracking-widest">
+                                Le PDF sera téléchargé automatiquement
+                            </span>
+
+                            <div class="flex gap-3">
+                                <button @click="closeFacture" :disabled="factureSaving"
+                                    class="h-10 px-5 border border-[var(--sidebar-border)] rounded-xl text-[12px] font-black uppercase tracking-widest hover:bg-[var(--sidebar-border)]/20 transition-all disabled:opacity-50">
+                                    Annuler
+                                </button>
+                                <button @click="submitFacture" :disabled="factureSaving"
+                                    class="h-10 px-6 bg-[var(--brand-orange)] text-white rounded-xl text-[12px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-[var(--brand-orange)]/20 active:scale-95 transition-all disabled:opacity-50">
+                                    <svg v-if="factureSaving" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                                    </svg>
+                                    <Download v-else class="w-4 h-4" />
+                                    {{ factureSaving ? 'Génération...' : 'Générer PDF' }}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

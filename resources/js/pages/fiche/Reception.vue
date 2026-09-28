@@ -6,7 +6,7 @@ import type { BreadcrumbItem } from '@/types';
 import HeaderFiche from './HeaderFiche.vue';
 import {
     Trash2, Plus, Save, CheckCircle2,
-    Pencil, X, AlertTriangle, Weight, ChevronDown
+    Pencil, X, AlertTriangle, Weight, ChevronDown, Clock
 } from 'lucide-vue-next';
 
 const breadcrumbs: BreadcrumbItem[] = [];
@@ -126,7 +126,6 @@ const filteredEnqueteurs = computed(() => {
         filtered = filtered.filter(e => e.societe_id === form.societe_id);
     }
     
-    // Ajouter l'enquêteur actuel s'il n'est pas dans la liste
     if (form.enqueteur_id) {
         const current = props.enqueteurs.find(e => e.id === form.enqueteur_id);
         if (current && !filtered.some(e => e.id === current.id)) {
@@ -144,7 +143,6 @@ const filteredParcelles = computed(() => {
         filtered = filtered.filter(p => p.producteur?.societe_id === form.societe_id);
     }
     
-    // Ajouter la parcelle actuelle si elle n'est pas dans la liste
     if (form.parcelle_id) {
         const current = props.parcelles.find(p => p.id === form.parcelle_id);
         if (current && !filtered.some(p => p.id === current.id)) {
@@ -170,6 +168,28 @@ const quantiteKg = computed(() => {
     }
     return null;
 });
+
+// ─── Durée de transport (Réception station - Collecte) ─────────────────────────
+
+const calcDuree = (debut: string | null | undefined, fin: string | null | undefined): string | null => {
+    if (!debut || !fin) return null;
+    const d = new Date(debut).getTime();
+    const f = new Date(fin).getTime();
+    if (isNaN(d) || isNaN(f)) return null;
+    const diff = f - d;
+    if (diff < 0) return null;
+
+    const totalMin = Math.floor(diff / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return h > 0
+        ? `${h}h${m.toString().padStart(2, '0')}`
+        : `${m} min`;
+};
+
+const dureeTransport = computed(() =>
+    calcDuree(form.collecte, form.retour_station)
+);
 
 // ─── Ouverture modal ──────────────────────────────────────────────────────────
 
@@ -369,9 +389,10 @@ const goToPage = (url: string | null) => {
                                 <th class="px-3 py-3 text-center border-r border-white/10">Qualité livraison</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">N° Immatriculation Voiture</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Commune et District</th>
-                                <th class="px-3 py-3 text-center border-r border-white/10">Collecte</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Départ champ</th>
                                 <th class="px-3 py-3 text-center border-r border-white/10">Reception station</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Collecte</th>
+                                <th class="px-3 py-3 text-center border-r border-white/10">Heure de différence</th>
                                 <th class="px-3 py-3 text-center">Actions</th>
                             </tr>
                         </thead>
@@ -435,15 +456,24 @@ const goToPage = (url: string | null) => {
                                 </td>
 
                                 <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
-                                    {{ fmtDate(fiche.collecte) }}
-                                </td>
-
-                                <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
                                     {{ fmtDate(fiche.depart_champ) }}
                                 </td>
 
                                 <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
-                                    {{ fmtDate(fiche.retour_station) }}
+                                    <div>{{ fmtDate(fiche.retour_station) }}</div>
+                                </td>
+
+                                <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
+                                    {{ fmtDate(fiche.collecte) }}
+                                </td>
+
+                                <td class="px-3 py-2 text-center text-[11px] border-r border-[var(--sidebar-border)]/30">
+                                    <div v-if="calcDuree(fiche.collecte, fiche.retour_station)"
+                                        class="inline-flex items-center gap-1 mt-0.5
+                                               text-[11px] font-black text-[var(--brand-orange)]">
+                                        <Clock class="w-2.5 h-2.5" />
+                                        {{ calcDuree(fiche.collecte, fiche.retour_station) }}
+                                    </div>
                                 </td>
 
                                 <td class="px-3 py-2 text-center">
@@ -641,11 +671,6 @@ const goToPage = (url: string | null) => {
                             <!-- ── Dates ──────────────────────────────────── -->
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
-                                    <label class="text-[12px] font-black uppercase tracking-wider">Collecte</label>
-                                    <input v-model="form.collecte" type="datetime-local"
-                                           class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
-                                </div>
-                                <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
                                     <label class="text-[12px] font-black uppercase tracking-wider">Départ champ</label>
                                     <input v-model="form.depart_champ" type="datetime-local"
                                            class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
@@ -655,6 +680,18 @@ const goToPage = (url: string | null) => {
                                     <input v-model="form.retour_station" type="datetime-local"
                                            class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
                                 </div>
+                                <div class="space-y-1.5" @click="$event.currentTarget.querySelector('input').showPicker()">
+                                    <label class="text-[12px] font-black uppercase tracking-wider">Collecte</label>
+                                    <input v-model="form.collecte" type="datetime-local"
+                                           class="input-line w-full text-[12px]" @input="(e) => (e.target as HTMLInputElement).blur()"/>
+                                </div>
+                            </div>
+
+                            <!-- ── Durée de transport (Réception station − Collecte) ── -->
+                            <div v-if="dureeTransport"
+                                class="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-[var(--brand-orange)]">
+                                <Clock class="w-3.5 h-3.5" />
+                                Heure de différence : {{ dureeTransport }}
                             </div>
 
                             <!-- ── Footer modal ──────────────────────────── -->

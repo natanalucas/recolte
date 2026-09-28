@@ -160,9 +160,12 @@ const cartonsByCode = computed(() => {
 });
 
 function onLotCodeChange(lot: LotForm) {
-    if (lot.code_traca_id && !lot.nb_cartons) {
-        const suggested = cartonsByCode.value.get(lot.code_traca_id);
-        if (suggested !== undefined) lot.nb_cartons = suggested;
+    if (!lot.code_traca_id) {
+        return;
+    }
+    const suggested = cartonsByCode.value.get(lot.code_traca_id);
+    if (suggested !== undefined) {
+        lot.nb_cartons = suggested;
     }
 }
 
