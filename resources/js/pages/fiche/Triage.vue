@@ -379,16 +379,20 @@ const factureError = ref<string | null>(null);
 const factureForm = reactive({
     prix_unitaire_caissette: null as number | null,
     prix_unitaire_produit:   null as number | null,
-    numero_facture:          '',   // ← NOUVEAU
-    lieu:                    '',   // ← NOUVEAU
+    numero_facture:          '',
+    lieu:                    '',
+    mode_paiement:           '',   // ← NOUVEAU
+    observations:            '',   // ← NOUVEAU
 });
 
 const openFacture = (row: TriageRecord) => {
     factureTarget.value = row;
     factureForm.prix_unitaire_caissette = null;
     factureForm.prix_unitaire_produit   = null;
-    factureForm.numero_facture          = '';   // ← reset
-    factureForm.lieu                    = '';   // ← reset
+    factureForm.numero_facture          = '';
+    factureForm.lieu                    = '';
+    factureForm.mode_paiement           = '';   // ← reset
+    factureForm.observations            = '';   // ← reset
     factureError.value = null;
     showFactureModal.value = true;
 };
@@ -436,6 +440,10 @@ const submitFacture = async () => {
         factureError.value = 'Veuillez renseigner le numéro de facture et le lieu.';
         return;
     }
+    if (!factureForm.mode_paiement) {                          // ← NOUVEAU
+        factureError.value = 'Veuillez sélectionner un mode de paiement.';
+        return;
+    }
 
     factureSaving.value = true;
     factureError.value = null;
@@ -454,8 +462,10 @@ const submitFacture = async () => {
             body: JSON.stringify({
                 prix_unitaire_caissette: factureForm.prix_unitaire_caissette,
                 prix_unitaire_produit:   factureForm.prix_unitaire_produit,
-                numero_facture:          factureForm.numero_facture,   // ← NOUVEAU
-                lieu:                    factureForm.lieu,             // ← NOUVEAU
+                numero_facture:          factureForm.numero_facture,   
+                lieu:                    factureForm.lieu,             
+                mode_paiement:           factureForm.mode_paiement,   
+                observations:            factureForm.observations, 
             }),
         });
 
@@ -1087,22 +1097,6 @@ const formatCertifications = (certs: TypeCertification[] | undefined) => {
 
                         <!-- Prix unitaires -->
                         <div class="grid grid-cols-2 gap-4">
-                            <div class="grid grid-cols-2 gap-4">
-                                <div class="space-y-1.5">
-                                    <label class="text-[12px] font-black uppercase tracking-wider">
-                                        Numéro de facture <span class="text-red-500">*</span>
-                                    </label>
-                                    <input v-model="factureForm.numero_facture" type="text"
-                                        class="input-line w-full" placeholder="Ex: FAC-2025-001" />
-                                </div>
-                                <div class="space-y-1.5">
-                                    <label class="text-[12px] font-black uppercase tracking-wider">
-                                        Lieu <span class="text-red-500">*</span>
-                                    </label>
-                                    <input v-model="factureForm.lieu" type="text"
-                                        class="input-line w-full" placeholder="Ex: Antananarivo" />
-                                </div>
-                            </div>
                             <div class="space-y-1.5">
                                 <label class="text-[12px] font-black uppercase tracking-wider">
                                     Prix unitaire caissette <span class="text-red-500">*</span>
@@ -1122,6 +1116,47 @@ const formatCertifications = (certs: TypeCertification[] | undefined) => {
                                         class="input-line w-full" placeholder="0" />
                                     <span class="text-[12px] font-bold">Ar/kg</span>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-black uppercase tracking-wider">
+                                    Numéro de facture <span class="text-red-500">*</span>
+                                </label>
+                                <input v-model="factureForm.numero_facture" type="text"
+                                    class="input-line w-full" placeholder="Ex: FAC-2025-001" />
+                            </div>
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-black uppercase tracking-wider">
+                                    Lieu <span class="text-red-500">*</span>
+                                </label>
+                                <input v-model="factureForm.lieu" type="text"
+                                    class="input-line w-full" placeholder="Ex: Antananarivo" />
+                            </div>
+                        </div>
+
+                        <!-- ── Mode de paiement + Observations ── -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-black uppercase tracking-wider">
+                                    Mode de paiement <span class="text-red-500">*</span>
+                                </label>
+                                <select v-model="factureForm.mode_paiement" class="input-line w-full">
+                                    <option value="">— choisir —</option>
+                                    <option value="Espèces">Espèces</option>
+                                    <option value="Mobile Money">Mobile Money</option>
+                                    <option value="Virement bancaire">Virement bancaire</option>
+                                    <option value="Chèque">Chèque</option>
+                                </select>
+                            </div>
+                            <div class="space-y-1.5">
+                                <label class="text-[12px] font-black uppercase tracking-wider">
+                                    Observations
+                                </label>
+                                <textarea v-model="factureForm.observations" rows="1"
+                                    class="input-line w-full resize-none"
+                                    placeholder="Remarques éventuelles..."></textarea>
                             </div>
                         </div>
 

@@ -204,14 +204,15 @@ const modalPanelRef = ref<HTMLElement | null>(null);
 const numPaletteInputRef = ref<HTMLInputElement | null>(null);
 
 // ---------------------------------------------------------------------------
-// 6. Watcher après déclaration de form
+// 6. Changement de société (action utilisateur uniquement)
+//    Remplace l'ancien watcher sur form.societe_id, qui se déclenchait aussi
+//    à l'ouverture de la modal de modification et effaçait les lots.
 // ---------------------------------------------------------------------------
-watch(() => form.societe_id, (newVal, oldVal) => {
-    if (props.isAdmin && newVal !== oldVal) {
-        form.enqueteurId = null;
-        form.lots = blankLots();
-    }
-});
+function onSocieteChange() {
+    if (!props.isAdmin) return;
+    form.enqueteurId = null;
+    form.lots = blankLots();
+}
 
 // ---------------------------------------------------------------------------
 // 7. Fonctions de gestion de la modal
@@ -239,7 +240,8 @@ function openEditModal(row: PaletisationRow) {
         type_carton: row.type_carton,
         debut: row.debut,
         fin: row.fin,
-        lots: row.lots.map((l) => ({ ...l })) as [LotForm, LotForm, LotForm],
+        // Copie profonde des certifications pour ne pas modifier la ligne de la liste
+        lots: row.lots.map((l) => ({ ...l, certifications: [...l.certifications] })) as [LotForm, LotForm, LotForm],
     });
     formError.value = null;
     isModalOpen.value = true;
@@ -500,7 +502,7 @@ const paginationItems = computed<(number | '…')[]>(() => {
                                         <span
                                             v-for="lot in row.lots"
                                             :key="lot.lot_number"
-                                            class="text-[10px] font-mono px-1.5 py-0.5 rounded border flex items-center gap-1"
+                                            class="text-[11px] font-mono px-1.5 py-0.5 rounded border flex items-center gap-1"
                                             :class="codeLabel(lot.code_traca_id) ? 'border-[var(--brand-green)]/30 bg-[var(--brand-green)]/5' : 'border-[var(--sidebar-border)] text-[var(--text)]/40'"
                                         >
                                             <span class="font-bold">L{{ lot.lot_number }}</span>
@@ -509,8 +511,8 @@ const paginationItems = computed<(number | '…')[]>(() => {
                                                 <span class="font-black">· {{ lot.nb_cartons }}</span>
                                             </template>
                                             <template v-if="lot.certifications && lot.certifications.length > 0">
-                                                <span class="ml-0.5 text-[8px] bg-amber-100 text-amber-700 px-1 rounded">
-                                                    {{ lot.certifications.map(c => c.nom).join(', ') }}
+                                                <span class="ml-0.5 text-[11px] text-amber-700 px-1 rounded">
+                                                    {{ lot.certifications.map(id => certifLabel(id)).join(', ') }}
                                                 </span>
                                             </template>
                                         </span>
@@ -638,7 +640,7 @@ const paginationItems = computed<(number | '…')[]>(() => {
                             <label class="text-[12px] font-black uppercase tracking-wider text-[var(--brand-orange)]">
                                 Société *
                             </label>
-                            <select v-model="form.societe_id" class="input-line w-full" required>
+                            <select v-model="form.societe_id" @change="onSocieteChange" class="input-line w-full" required>
                                 <option :value="null">— choisir —</option>
                                 <option v-for="s in props.societes" :key="s.id" :value="s.id">
                                     {{ s.nom }}

@@ -90,26 +90,6 @@ const form = useForm({
     palettes: [] as Array<{ id: number; paletisation_id: string | number; type: string; certifs: string }>
 });
 
-// ─── Filtrage des palettes disponibles ──────────────────────
-const availablePalettesFiltered = computed(() => {
-    const currentPaletteIds = new Set<number>();
-    if (isEditing.value && currentId.value) {
-        const currentExpedition = props.expeditions.find(e => e.id === currentId.value);
-        if (currentExpedition) {
-            currentExpedition.palettes?.forEach((p: any) => {
-                if (p.paletisation_id) currentPaletteIds.add(p.paletisation_id);
-            });
-        }
-    }
-
-    return props.availablePalettes.filter(pal => {
-        if (props.usedPaletteIds.includes(pal.id) && !currentPaletteIds.has(pal.id)) {
-            return false;
-        }
-        return true;
-    });
-});
-
 // ─── Filtrage des enquêteurs pour admin ─────────────────────
 const filteredEnqueteurs = computed(() => {
     if (!props.isAdmin) return props.enqueteurs;
@@ -437,7 +417,7 @@ const confirmDelete = (fiche: any) => {
                                                         class="w-full bg-transparent outline-none text-[12px] font-mono font-bold text-center cursor-pointer focus:text-[var(--brand-green)]"
                                                     >
                                                         <option value="">-- Sélectionner --</option>
-                                                        <option v-for="ap in availablePalettesFiltered" :key="ap.id" :value="ap.id">
+                                                        <option v-for="ap in availablePalettes" :key="ap.id" :value="ap.id">
                                                             {{ ap.num_palette }}
                                                         </option>
                                                     </select>

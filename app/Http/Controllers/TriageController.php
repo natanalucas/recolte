@@ -38,6 +38,8 @@ class TriageController extends Controller
             'prix_unitaire_produit'   => 'required|numeric|min:0',
             'numero_facture'          => 'required|string|max:100',
             'lieu'                    => 'required|string|max:150',
+            'mode_paiement'           => 'required|in:Espèces,Mobile Money,Virement bancaire,Chèque',
+            'observations'            => 'nullable|string|max:2000',
         ]);
 
         $triage->load('codeTraca.parcelle.producteur', 'codeTraca.societe', 'certifications');
@@ -78,6 +80,8 @@ class TriageController extends Controller
             'totalCaissette'        => $totalCaissette,
             'totalProduit'          => $totalProduit,
             'total'                 => $total,
+            'modePaiement' => $validated['mode_paiement'],       // ← NOUVEAU
+            'observations' => $validated['observations'] ?? null, // ← NOUVEAU
         ]);
 
         return $pdf->download("facture-litchi-{$triage->id}.pdf");
